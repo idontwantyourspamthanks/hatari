@@ -104,6 +104,24 @@ DisasmWidget::DisasmWidget(QWidget *parent, Session* pSession, int windowIndex, 
 
     setMouseTracking(true);
 
+    // Key bindings
+    {
+        QKeySequence seq = m_pSession->GetBinding("toggleBreakpoint");
+        new QShortcut(seq, this, SLOT(toggleBreakpoint()), nullptr, Qt::WidgetShortcut);
+    }
+    {
+        QKeySequence seq = m_pSession->GetBinding("runToCursor");
+        new QShortcut(seq, this, SLOT(runToCursor()), nullptr, Qt::WidgetShortcut);
+    }
+    {
+        QKeySequence seq = m_pSession->GetBinding("runToCursor2");
+        new QShortcut(seq, this, SLOT(runToCursor()), nullptr, Qt::WidgetShortcut);
+    }
+    {
+        QKeySequence seq = m_pSession->GetBinding("contextMenu");
+        new QShortcut(seq, this, SLOT(KeyboardContextMenu()), nullptr, Qt::WidgetShortcut);
+    }
+
     this->setFocusPolicy(Qt::FocusPolicy::StrongFocus);
     configChanged();        // Disallow DSP if necessary
 }
@@ -668,10 +686,6 @@ void DisasmWidget::keyPressEvent(QKeyEvent* event)
         {
             switch (event->key())
             {
-                case Qt::Key_H:         runToCursor();            return;
-                case Qt::Key_B:         toggleBreakpoint();       return;
-                case Qt::Key_Space:     KeyboardContextMenu();    return;
-                case Qt::Key_F10:       runToCursor();            return;
                 default: break;
             }
         }
@@ -685,7 +699,6 @@ void DisasmWidget::keyPressEvent(QKeyEvent* event)
             case Qt::Key_Right:      MoveDownMin();         return;
             case Qt::Key_PageUp:     PageUp();              return;
             case Qt::Key_PageDown:   PageDown();            return;
-            case Qt::Key_F9:         toggleBreakpoint();    return;
             default: break;
             }
         }
@@ -1637,10 +1650,10 @@ DisasmWindow::DisasmWindow(QWidget *parent, Session* pSession, int windowIndex) 
     loadSettings();
 
     // The scope here is explained at https://forum.qt.io/topic/67981/qshortcut-multiple-widget-instances/2
-    new QShortcut(QKeySequence("Ctrl+F"),         this, SLOT(findClickedSlot()), nullptr, Qt::WidgetWithChildrenShortcut);
-    new QShortcut(QKeySequence("F3"),             this, SLOT(nextClickedSlot()), nullptr, Qt::WidgetWithChildrenShortcut);
-    new QShortcut(QKeySequence("Ctrl+G"),         this, SLOT(gotoClickedSlot()), nullptr, Qt::WidgetWithChildrenShortcut);
-    new QShortcut(QKeySequence("Ctrl+L"),         this, SLOT(lockClickedSlot()), nullptr, Qt::WidgetWithChildrenShortcut);
+    new QShortcut(m_pSession->GetBinding("disasmFind"),     this, SLOT(findClickedSlot()), nullptr, Qt::WidgetWithChildrenShortcut);
+    new QShortcut(m_pSession->GetBinding("disasmFindNext"), this, SLOT(nextClickedSlot()), nullptr, Qt::WidgetWithChildrenShortcut);
+    new QShortcut(m_pSession->GetBinding("disasmGoto"),     this, SLOT(gotoClickedSlot()), nullptr, Qt::WidgetWithChildrenShortcut);
+    new QShortcut(m_pSession->GetBinding("disasmLock"),     this, SLOT(lockClickedSlot()), nullptr, Qt::WidgetWithChildrenShortcut);
 
     // Listen for start/stop, so we can update our memory request
     connect(m_pDisasmWidget,&DisasmWidget::addressChanged,            this, &DisasmWindow::UpdateTextBox);

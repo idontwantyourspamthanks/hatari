@@ -250,8 +250,8 @@ GraphicsInspectorWidget::GraphicsInspectorWidget(QWidget *parent,
     m_pOverlayMenu->addAction(m_pOverlayVideoAction);
 
     // Keyboard shortcuts
-    new QShortcut(QKeySequence("Ctrl+G"),         this, SLOT(gotoClickedSlot()), nullptr, Qt::WidgetWithChildrenShortcut);
-    new QShortcut(QKeySequence("Ctrl+L"),         this, SLOT(lockClickedSlot()), nullptr, Qt::WidgetWithChildrenShortcut);
+    new QShortcut(m_pSession->GetBinding("graphicsGoto"),   this, SLOT(gotoClickedSlot()), nullptr, Qt::WidgetWithChildrenShortcut);
+    new QShortcut(m_pSession->GetBinding("graphicsLock"),   this, SLOT(lockClickedSlot()), nullptr, Qt::WidgetWithChildrenShortcut);
 
     connect(m_pTargetModel,  &TargetModel::connectChangedSignal,          this, &GraphicsInspectorWidget::connectChanged);
     connect(m_pTargetModel,  &TargetModel::startStopChangedSignal,        this, &GraphicsInspectorWidget::startStopChanged);
@@ -283,6 +283,11 @@ GraphicsInspectorWidget::GraphicsInspectorWidget(QWidget *parent,
     connect(m_pOverlayZoomAction,           &QAction::triggered,          this, &GraphicsInspectorWidget::overlayZoomChanged);
     connect(m_pOverlayRegistersAction,      &QAction::triggered,          this, &GraphicsInspectorWidget::overlayRegistersChanged);
     connect(m_pOverlayVideoAction,          &QAction::triggered,          this, &GraphicsInspectorWidget::overlayVideoChanged);
+
+    {
+        QKeySequence seq = m_pSession->GetBinding("contextMenu");
+        new QShortcut(seq, this, SLOT(KeyboardContextMenu()), nullptr, Qt::WidgetWithChildrenShortcut);
+    }
 
     loadSettings();
     UpdateUIElements();
@@ -363,16 +368,7 @@ void GraphicsInspectorWidget::keyPressEvent(QKeyEvent* ev)
     Qt::KeyboardModifiers modif = ev->modifiers() & ~(Qt::KeypadModifier | Qt::GroupSwitchModifier);
 
     bool shift = (modif.testFlag(Qt::KeyboardModifier::ShiftModifier));
-    // Handle keyboard shortcuts with scope here, since QShortcut is global
-    if (modif == Qt::ControlModifier)
-    {
-        switch (ev->key())
-        {
-            case Qt::Key_Space:     KeyboardContextMenu();    return;
-            default: break;
-        }
-    }
-    else
+    if (modif != Qt::ControlModifier)
     {
         if (ev->key() == Qt::Key::Key_Up)
             offset = shift ? -8 * data.bytesPerLine : -data.bytesPerLine;

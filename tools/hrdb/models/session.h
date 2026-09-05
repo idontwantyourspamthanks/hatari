@@ -5,6 +5,7 @@
 #include <QFont>
 #include <QProcess>
 #include <QColor>
+#include <QKeySequence>
 
 #include "launcher.h"
 
@@ -85,6 +86,8 @@ public:
     void Connect();
     void Disconnect();
 
+    QKeySequence GetBinding(QString name);
+
     QTcpSocket*     m_pTcpSocket;
     QTemporaryFile* m_pStartupFile;         // Debugger commands at Hatari launch
     QTemporaryFile* m_pProgramStartScript;  // Debugger commands run at program start
@@ -118,6 +121,7 @@ public:
 
     void loadSettings();
     void saveSettings();
+    void setDefaultBindings();
 
     void resetWarm();
     void resetCold();
