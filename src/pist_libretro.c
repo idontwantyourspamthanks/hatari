@@ -15,8 +15,11 @@ const char PistLibretro_fileid[] = "Hatari pist_libretro.c";
 
 #include "main.h"
 #include "breakcond.h"
+#include "debugcpu.h"
+#include "debugInfo.h"
 #include "debugui.h"
 #include "m68000.h"
+#include "newcpu.h"
 #include "screen.h"
 #include "stMemory.h"
 #include "tos.h"
@@ -222,6 +225,124 @@ int pist_hatari_run(PistHatariFrame *frame, int *stopped)
 		copy_frame(frame);
 	if (stopped)
 		*stopped = sStopped;
+	return 0;
+}
+
+/* One step, or a step-over that planted a one-shot, runs until the debugger
+ * stops us. The frame loop's one-VBL cap must not apply: a step-over of a
+ * subroutine would otherwise return at the next blank. */
+static int run_until_debugger(void)
+{
+	sStopped = 0;
+	bQuitProgram = false;
+	Main_SetRunVBLs(0x7fffffff);
+	m68k_go(1);
+	bQuitProgram = false;
+	return sStopped ? 0 : 1;
+}
+
+static const char *const kRegNames[] = {
+	"D0", "D1", "D2", "D3", "D4", "D5", "D6", "D7",
+	"A0", "A1", "A2", "A3", "A4", "A5", "A6", "A7",
+	"PC", "USP", "ISP", "SR"
+};
+enum { kRegCount = sizeof(kRegNames) / sizeof(kRegNames[0]) };
+
+int pist_hatari_registers(const char **names, uint32_t *values, int valuesCap, int *needed)
+{
+	int i;
+	uint16_t sr;
+
+	if (needed)
+		*needed = kRegCount;
+	if (!sUp || valuesCap < kRegCount || !names || !values)
+		return -1;
+
+	sr = M68000_GetSR();
+	for (i = 0; i < 16; i++)
+		values[i] = regs.regs[i];
+	values[16] = M68000_GetPC();
+	values[17] = regs.usp;
+	values[18] = regs.isp;
+	values[19] = sr;
+	for (i = 0; i < kRegCount; i++)
+		names[i] = kRegNames[i];
+	return kRegCount;
+}
+
+int pist_hatari_basepage(uint32_t *textBase, uint32_t *dataBase, uint32_t *bssBase)
+{
+	uint32_t text;
+
+	if (!sUp)
+		return 1;
+	text = DebugInfo_GetTEXT();
+	if (textBase)
+		*textBase = text;
+	if (dataBase)
+		*dataBase = DebugInfo_GetDATA();
+	if (bssBase)
+		*bssBase = DebugInfo_GetBSS();
+	/* No program loaded yet: a zero text base is not a resolved address. */
+	return text ? 0 : 1;
+}
+
+int pist_hatari_pause(void)
+{
+	if (!sUp)
+		return 1;
+	if (sStopped)
+		return 0;
+	/* The same always-true one-shot the subprocess arms on the control
+	 * socket. The next run stops at the following instruction. */
+	return DebugUI_ParseLine("b pc ! 0 :once") ? 0 : 1;
+}
+
+int pist_hatari_step(void)
+{
+	if (!sUp || !sStopped)
+		return 1;
+	DebugCpu_SetSteps(1);
+	DebugCpu_SetDebugging();
+	return run_until_debugger();
+}
+
+int pist_hatari_step_over(void)
+{
+	if (!sUp || !sStopped)
+		return 1;
+	/* "n" returns ENDCONT when it armed one step or a one-shot at the
+	 * instruction after a call. ParseLine reports only CMDDONE as success,
+	 * and the command path rewrites ENDCONT to END, so a false return here
+	 * is the step that is ready to run. CMDDONE means it was rejected. */
+	if (DebugUI_ParseLine("n"))
+		return 1;
+	return run_until_debugger();
+}
+
+int pist_hatari_resume(void)
+{
+	if (!sUp)
+		return 1;
+	sStopped = 0;
+	DebugCpu_SetSteps(0);
+	DebugCpu_SetDebugging();
+	return 0;
+}
+
+int pist_hatari_arm_breakpoint(const char *condition)
+{
+	if (!sUp || !condition || !condition[0])
+		return 1;
+	return DebugUI_ParseLine(condition) ? 0 : 1;
+}
+
+int pist_hatari_clear_breakpoints(void)
+{
+	if (!sUp)
+		return 1;
+	BreakCond_Command("all", false);
+	DebugCpu_SetDebugging();
 	return 0;
 }
 

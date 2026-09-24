@@ -13,7 +13,7 @@
 #include <string.h>
 #include <unistd.h>
 
-int pist_hatari_pc(void);
+uint32_t pist_hatari_pc(void);
 
 static int file_exists(const char *path)
 {
@@ -164,10 +164,131 @@ int main(int argc, char **argv)
 	}
 	pc = pist_hatari_pc();
 	printf("entry after %d vb, stopped %d, pc %08x\n", i, stopped, pc);
-	pist_hatari_stop();
 	if (!stopped || pc >= 0xe00000u) {
 		fprintf(stderr, "entry breakpoint did not stop in RAM\n");
+		pist_hatari_stop();
 		return 1;
 	}
+
+	/* The entry condition is `pc = TEXT`, so the base and the PC agree.
+	 * A short register buffer must report how many were needed and write
+	 * nothing. */
+	{
+		uint32_t text = 0, data = 0, bss = 0;
+		const char *names[32];
+		uint32_t values[32];
+		int needed = -1;
+		int n, r;
+		uint32_t reg_pc = 0xffffffffu;
+
+		if (pist_hatari_registers(NULL, NULL, 0, &needed) != -1 || needed < 20) {
+			fprintf(stderr, "registers did not report a short buffer (needed %d)\n", needed);
+			pist_hatari_stop();
+			return 1;
+		}
+		/* The break is noticed as the matching instruction finishes, so the
+		 * PC we observe is the next one. This program is nop; bra.s to
+		 * itself, and `pc = TEXT` matches the nop, leaving the bra. */
+		if (pist_hatari_basepage(&text, &data, &bss) != 0 || pc != text + 2) {
+			fprintf(stderr, "basepage text %08x, pc %08x\n", text, pc);
+			pist_hatari_stop();
+			return 1;
+		}
+		n = pist_hatari_registers(names, values, 32, &needed);
+		if (n < 20) {
+			fprintf(stderr, "registers returned %d\n", n);
+			pist_hatari_stop();
+			return 1;
+		}
+		for (r = 0; r < n; r++) {
+			if (names[r] && strcmp(names[r], "PC") == 0)
+				reg_pc = values[r];
+		}
+		if (reg_pc != pc) {
+			fprintf(stderr, "register PC %08x, cpu PC %08x\n", reg_pc, pc);
+			pist_hatari_stop();
+			return 1;
+		}
+
+		/* The bra branches to itself, so a step and a step-over both
+		 * stay on it. step-over is not a subroutine here; it is the
+		 * one-instruction path of `n`. */
+		if (pist_hatari_step_over() != 0 || pist_hatari_pc() != text + 2) {
+			fprintf(stderr, "step over bra.s landed at %08x, wanted %08x\n",
+			        pist_hatari_pc(), text + 2);
+			pist_hatari_stop();
+			return 1;
+		}
+		if (pist_hatari_step() != 0 || pist_hatari_pc() != text + 2) {
+			fprintf(stderr, "step of bra.s landed at %08x\n", pist_hatari_pc());
+			pist_hatari_stop();
+			return 1;
+		}
+
+		/* Armed at the bra, resume stops there again. Cleared, the loop runs. */
+		{
+			char condition[64];
+			snprintf(condition, sizeof(condition), "b pc = $%x", text + 2);
+			if (pist_hatari_clear_breakpoints() != 0 ||
+			    pist_hatari_arm_breakpoint(condition) != 0 ||
+			    pist_hatari_resume() != 0) {
+				fprintf(stderr, "could not arm %s\n", condition);
+				pist_hatari_stop();
+				return 1;
+			}
+		}
+		stopped = 0;
+		for (i = 0; i < 5 && !stopped; i++) {
+			memset(&frame, 0, sizeof(frame));
+			if (pist_hatari_run(&frame, &stopped) != 0) {
+				fprintf(stderr, "run failed after arming\n");
+				pist_hatari_stop();
+				return 1;
+			}
+		}
+		if (!stopped || pist_hatari_pc() != text + 2) {
+			fprintf(stderr, "armed breakpoint did not stop at the bra (stopped %d pc %08x)\n",
+			        stopped, pist_hatari_pc());
+			pist_hatari_stop();
+			return 1;
+		}
+
+		if (pist_hatari_clear_breakpoints() != 0 || pist_hatari_resume() != 0) {
+			fprintf(stderr, "could not resume the cleared loop\n");
+			pist_hatari_stop();
+			return 1;
+		}
+		stopped = 1;
+		for (i = 0; i < 3; i++) {
+			memset(&frame, 0, sizeof(frame));
+			if (pist_hatari_run(&frame, &stopped) != 0 || stopped) {
+				fprintf(stderr, "cleared breakpoints still stopped the loop\n");
+				pist_hatari_stop();
+				return 1;
+			}
+		}
+		if (pist_hatari_pause() != 0) {
+			fprintf(stderr, "pause failed\n");
+			pist_hatari_stop();
+			return 1;
+		}
+		stopped = 0;
+		for (i = 0; i < 5 && !stopped; i++) {
+			memset(&frame, 0, sizeof(frame));
+			if (pist_hatari_run(&frame, &stopped) != 0) {
+				fprintf(stderr, "run failed after pause\n");
+				pist_hatari_stop();
+				return 1;
+			}
+		}
+		if (!stopped) {
+			fprintf(stderr, "pause did not stop the core\n");
+			pist_hatari_stop();
+			return 1;
+		}
+		printf("step, registers, breakpoint and pause ok, pc %08x\n", pist_hatari_pc());
+	}
+
+	pist_hatari_stop();
 	return 0;
 }
