@@ -35,7 +35,13 @@ if(ENABLE_OSX_BUNDLE)
 	# these are the macOS Interface Builder Files
 	set (HATARI_XIBS en.lproj/SDLMain fr.lproj/SDLMain)
 elseif(APPLE)
-	set(SOURCES ${SOURCES} gui-osx/paths.m)
+	# The release dylib does not link Cocoa. The screenshot helper is a
+	# plain C function; the executable keeps the Foundation one.
+	if(PIST_LIBRETRO_STUB_SDL)
+		set(SOURCES ${SOURCES} pist_mac_screenshot.c)
+	else()
+		set(SOURCES ${SOURCES} gui-osx/paths.m)
+	endif()
 endif()
 
 # When building for Windows, define specific sources for gui and resources
@@ -53,6 +59,11 @@ endif(WIN32)
 
 include_directories(includes debug falcon
 		    ${CMAKE_BINARY_DIR} ${SDL2_INCLUDE_DIRS} cpu)
+# Ahead of any system SDL, so <SDL.h> is the stub for every archive this
+# dylib links. A mixed layout would be a crash, not a link error.
+if(PIST_LIBRETRO_STUB_SDL)
+	include_directories(BEFORE ${CMAKE_CURRENT_SOURCE_DIR}/pist_sdl)
+endif()
 
 if(ZLIB_FOUND)
 	include_directories(${ZLIB_INCLUDE_DIR})
@@ -213,15 +224,28 @@ elseif(EMSCRIPTEN)
 	)
 # Other targets, use default sources
 else()
-	add_executable(${APP_NAME} ${SOURCES})
+	if(NOT PIST_LIBRETRO_STUB_SDL)
+		add_executable(${APP_NAME} ${SOURCES})
+	endif()
 endif(ENABLE_OSX_BUNDLE)
 
 # PiST's in-process core. Same sources as the executable, plus the session
-# entry point. The executable stays the subprocess Hatari.
+# entry point. The executable stays the subprocess Hatari. The stub build
+# is the dylib alone: there is no SDL to link an executable against.
 if(PIST_LIBRETRO)
 	set(SOURCES ${SOURCES} pist_libretro.c)
+	if(PIST_LIBRETRO_STUB_SDL)
+		set(SOURCES ${SOURCES} pist_sdl_stub.c)
+	endif()
 	add_library(hatari_libretro SHARED ${SOURCES})
-	set(HATARI_TARGETS ${APP_NAME} hatari_libretro)
+	# PiST looks for hatari_libretro.{dylib,so,dll}, not libhatari_libretro.
+	set_target_properties(hatari_libretro PROPERTIES PREFIX "" OUTPUT_NAME "hatari_libretro")
+	if(PIST_LIBRETRO_STUB_SDL)
+		target_compile_definitions(hatari_libretro PRIVATE __LIBRETRO__)
+		set(HATARI_TARGETS hatari_libretro)
+	else()
+		set(HATARI_TARGETS ${APP_NAME} hatari_libretro)
+	endif()
 else()
 	set(HATARI_TARGETS ${APP_NAME})
 endif()
@@ -271,7 +295,7 @@ if(Capstone_FOUND)
 	target_link_libraries(${hatari_target} ${CAPSTONE_LIBRARY})
 endif(Capstone_FOUND)
 
-if(APPLE)
+if(APPLE AND NOT (PIST_LIBRETRO_STUB_SDL AND hatari_target STREQUAL "hatari_libretro"))
 	target_link_libraries(${hatari_target} "-framework Cocoa")
 endif()
 
@@ -297,10 +321,10 @@ endif()
 
 if(ENABLE_OSX_BUNDLE)
 	install(TARGETS ${APP_NAME} BUNDLE DESTINATION /Applications)
-else()
+elseif(NOT PIST_LIBRETRO_STUB_SDL)
 	install(TARGETS ${APP_NAME} RUNTIME DESTINATION ${BINDIR})
 	install(FILES hatari-icon.bmp DESTINATION ${DATADIR})
 	if(TOS_IMG_FILE)
 		install(FILES ${TOS_IMG_FILE} DESTINATION ${DATADIR})
 	endif(TOS_IMG_FILE)
-endif(ENABLE_OSX_BUNDLE)
+endif()
