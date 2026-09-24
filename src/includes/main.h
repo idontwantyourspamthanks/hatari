@@ -70,4 +70,9 @@ extern void Main_EventHandler(bool remoteDebugging);
 extern void Main_SetTitle(const char *title);
 extern void Main_ErrorExit(const char *msg1, const char *msg2, int errval);
 
+/* Bring the machine up from an argv PiST built, and leave the CPU stopped.
+ * Does not read hatari.cfg. Returns 0, or non-zero with a message in err. */
+extern int Main_LibretroBringUp(int argc, const char * const *argv, char *err, int errCap);
+extern void Main_LibretroShutdown(void);
+
 #endif /* ifndef HATARI_MAIN_H */

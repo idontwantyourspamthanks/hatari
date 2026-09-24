@@ -216,57 +216,78 @@ else()
 	add_executable(${APP_NAME} ${SOURCES})
 endif(ENABLE_OSX_BUNDLE)
 
+# PiST's in-process core. Same sources as the executable, plus the session
+# entry point. The executable stays the subprocess Hatari.
+if(PIST_LIBRETRO)
+	set(SOURCES ${SOURCES} pist_libretro.c)
+	add_library(hatari_libretro SHARED ${SOURCES})
+	set(HATARI_TARGETS ${APP_NAME} hatari_libretro)
+else()
+	set(HATARI_TARGETS ${APP_NAME})
+endif()
+
+foreach(hatari_target ${HATARI_TARGETS})
+
 if(SDL2_OTHER_CFLAGS)
-	target_compile_definitions(${APP_NAME} PRIVATE ${SDL2_OTHER_CFLAGS})
+	target_compile_definitions(${hatari_target} PRIVATE ${SDL2_OTHER_CFLAGS})
 	# message(STATUS "Additional CFLAGS of SDL: ${SDL2_OTHER_CFLAGS}")
 endif(SDL2_OTHER_CFLAGS)
 
-target_link_libraries(${APP_NAME} Falcon UaeCpu GuiSdl Floppy Debug ${SDL2_LIBRARIES})
+target_link_libraries(${hatari_target} Falcon UaeCpu GuiSdl Floppy Debug ${SDL2_LIBRARIES})
 
 if(Math_FOUND AND NOT APPLE)
-	target_link_libraries(${APP_NAME} ${MATH_LIBRARY})
+	target_link_libraries(${hatari_target} ${MATH_LIBRARY})
 endif()
 
 if(Readline_FOUND)
-	target_link_libraries(${APP_NAME} ${READLINE_LIBRARY})
+	target_link_libraries(${hatari_target} ${READLINE_LIBRARY})
 endif(Readline_FOUND)
 
 if(ZLIB_FOUND)
-	target_link_libraries(${APP_NAME} ${ZLIB_LIBRARY})
+	target_link_libraries(${hatari_target} ${ZLIB_LIBRARY})
 endif(ZLIB_FOUND)
 
 if(PNG_FOUND)
-	target_link_libraries(${APP_NAME} ${PNG_LIBRARY})
+	target_link_libraries(${hatari_target} ${PNG_LIBRARY})
 endif(PNG_FOUND)
 
 if(X11_FOUND)
-	target_link_libraries(${APP_NAME} ${X11_LIBRARIES})
+	target_link_libraries(${hatari_target} ${X11_LIBRARIES})
 endif(X11_FOUND)
 
 if(PortMidi_FOUND)
-	target_link_libraries(${APP_NAME} ${PORTMIDI_LIBRARY})
+	target_link_libraries(${hatari_target} ${PORTMIDI_LIBRARY})
 endif(PortMidi_FOUND)
 
 if(CapsImage_FOUND)
-	target_link_libraries(${APP_NAME} ${CAPSIMAGE_LIBRARY})
+	target_link_libraries(${hatari_target} ${CAPSIMAGE_LIBRARY})
 endif(CapsImage_FOUND)
 
 if(Udev_FOUND)
-	target_link_libraries(${APP_NAME} ${UDEV_LIBRARY})
+	target_link_libraries(${hatari_target} ${UDEV_LIBRARY})
 endif(Udev_FOUND)
 
 if(Capstone_FOUND)
-	target_link_libraries(${APP_NAME} ${CAPSTONE_LIBRARY})
+	target_link_libraries(${hatari_target} ${CAPSTONE_LIBRARY})
 endif(Capstone_FOUND)
 
 if(APPLE)
-	target_link_libraries(${APP_NAME} "-framework Cocoa")
+	target_link_libraries(${hatari_target} "-framework Cocoa")
 endif()
 
 if(WIN32)
 	# Needed for socket() on Windows
-	target_link_libraries(${APP_NAME} ws2_32)
+	target_link_libraries(${hatari_target} ws2_32)
 endif(WIN32)
+
+endforeach()
+
+if(PIST_LIBRETRO)
+	add_executable(pist_tos_path ${CMAKE_SOURCE_DIR}/tests/pist_tos_path.c)
+	target_link_libraries(pist_tos_path hatari_libretro)
+	target_include_directories(pist_tos_path PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+	set_target_properties(pist_tos_path PROPERTIES BUILD_RPATH "\$ORIGIN")
+endif()
 
 
 if(ENABLE_OSX_BUNDLE)

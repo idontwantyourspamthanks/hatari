@@ -10,6 +10,7 @@ const char Main_fileid[] = "Hatari main.c";
 
 #include <time.h>
 #include <errno.h>
+#include <setjmp.h>
 #include <SDL.h>
 
 #include "main.h"
@@ -35,6 +36,7 @@ const char Main_fileid[] = "Hatari main.c";
 #include "keymap.h"
 #include "log.h"
 #include "m68000.h"
+#include "memory.h"
 #include "memorySnapShot.h"
 #include "midi.h"
 #include "ncr5380.h"
@@ -777,6 +779,20 @@ static void Main_Init_HW(void)
 	Video_InitTimings();
 }
 
+/* The in-process core. A failure longjmps back to Main_LibretroBringUp
+ * instead of exiting the process. The user's hatari.cfg is never read. */
+static jmp_buf sLibretroJump;
+static int sLibretroActive;
+static int sLibretroUp;
+static char sLibretroMsg[512];
+static char *sLibretroErr;
+static int sLibretroErrCap;
+
+static int Main_InLibretro(void)
+{
+	return sLibretroActive;
+}
+
 /*-----------------------------------------------------------------------*/
 /**
  * Initialise emulation
@@ -841,8 +857,11 @@ static void Main_Init(void)
 	if (Reset_Cold())             /* Reset all systems, load TOS image */
 	{
 		/* If loading of the TOS failed, we bring up the GUI to let the
-		 * user choose another TOS ROM file. */
-		Dialog_DoProperty();
+		 * user choose another TOS ROM file. The in-process core has no
+		 * GUI: the caller's ROM path is the only image, and a failure
+		 * is reported back instead of a dialog. */
+		if (!Main_InLibretro())
+			Dialog_DoProperty();
 	}
 	if (!bTosImageLoaded || bQuitProgram)
 	{
@@ -1017,11 +1036,81 @@ void Main_ErrorExit(const char *msg1, const char *msg2, int errval)
 
 	SDL_Quit();
 
+	if (sLibretroActive) {
+		if (msg1 && msg2)
+			snprintf(sLibretroMsg, sizeof(sLibretroMsg), "%s %s", msg1, msg2);
+		else if (msg1)
+			snprintf(sLibretroMsg, sizeof(sLibretroMsg), "%s", msg1);
+		else if (sLibretroMsg[0] == '\0')
+			snprintf(sLibretroMsg, sizeof(sLibretroMsg), "Hatari failed to start");
+		longjmp(sLibretroJump, errval ? errval : 1);
+	}
+
 #ifdef WIN32
 	fputs("<press Enter to exit>\n", stderr);
 	(void)fgetc(stdin);
 #endif
 	exit(errval);
+}
+
+int Main_LibretroBringUp(int argc, const char * const *argv, char *err, int errCap)
+{
+	int jumped;
+
+	sLibretroErr = err;
+	sLibretroErrCap = errCap;
+	sLibretroMsg[0] = '\0';
+	sLibretroActive = 1;
+
+	/* A missing display must not open a window. The core's frame comes
+	 * from the run call, once that exists. */
+#if HAVE_SETENV
+	if (!getenv("SDL_VIDEODRIVER"))
+		setenv("SDL_VIDEODRIVER", "dummy", 0);
+#endif
+
+	jumped = setjmp(sLibretroJump);
+	if (jumped) {
+		if (sLibretroErr && sLibretroErrCap > 0)
+			snprintf(sLibretroErr, (size_t)sLibretroErrCap, "%s", sLibretroMsg);
+		sLibretroActive = 0;
+		sLibretroUp = 0;
+		return jumped;
+	}
+
+	Hatari_srand(time(NULL));
+	Str_Init();
+	Log_Default();
+	Paths_Init(argv[0]);
+	Main_Init_HW();
+	Configuration_SetDefault();
+	/* No Configuration_Load. The subprocess session points HOME away from
+	 * the user's hatari.cfg; this entry point simply never reads it. The
+	 * session argv is the whole configuration. */
+	if (ConfigureParams.Keyboard.nLanguage == TOS_LANG_UNKNOWN)
+		ConfigureParams.Keyboard.nLanguage = TOS_DefaultLanguage();
+
+	if (!Opt_ParseParameters(argc, (const char * const *)argv)) {
+		sLibretroActive = 0;
+		if (err && errCap > 0 && err[0] == '\0')
+			snprintf(err, (size_t)errCap, "Hatari rejected the session options");
+		return 1;
+	}
+	Configuration_Apply(true);
+	Main_Init();
+
+	sLibretroActive = 0;
+	sLibretroUp = 1;
+	return 0;
+}
+
+void Main_LibretroShutdown(void)
+{
+	if (!sLibretroUp)
+		return;
+	sLibretroUp = 0;
+	memory_uninit();
+	Main_UnInit();
 }
 
 /**

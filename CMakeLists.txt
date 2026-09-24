@@ -119,6 +119,10 @@ else()
 	set(APP_NAME "hatari")
 endif(ENABLE_OSX_BUNDLE)
 
+# PiST loads this as hatari_libretro. Off for a normal Hatari build.
+set(PIST_LIBRETRO 0
+    CACHE BOOL "Build the PiST in-process core")
+
 # ####################
 # Check for libraries:
 # ####################
@@ -383,6 +387,12 @@ endif()
 
 configure_file(${CMAKE_SOURCE_DIR}/cmake/config-cmake.h
 		${CMAKE_BINARY_DIR}/config.h)
+
+if(PIST_LIBRETRO)
+	# The core is a shared library. The static CPU and debugger archives
+	# it links have to be position-independent too.
+	set(CMAKE_POSITION_INDEPENDENT_CODE ON)
+endif()
 
 add_subdirectory(src)
 add_subdirectory(doc)

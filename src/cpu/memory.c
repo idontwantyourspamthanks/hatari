@@ -1874,6 +1874,9 @@ void memory_uninit (void)
 		free(ROMmemory);
 	}
 	ROMmemory = NULL;
+	/* IOmemory aliases the ROM allocation. Leaving it set makes the next
+	 * STMemory_Init read freed memory. */
+	IOmemory = NULL;
 }
 
 
