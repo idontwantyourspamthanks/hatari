@@ -74,5 +74,8 @@ extern void Main_ErrorExit(const char *msg1, const char *msg2, int errval);
  * Does not read hatari.cfg. Returns 0, or non-zero with a message in err. */
 extern int Main_LibretroBringUp(int argc, const char * const *argv, char *err, int errCap);
 extern void Main_LibretroShutdown(void);
+/* True for the whole in-process session, so the CPU loop can return to
+ * the caller instead of reading the debugger console or exiting. */
+extern bool Main_LibretroSession(void);
 
 #endif /* ifndef HATARI_MAIN_H */

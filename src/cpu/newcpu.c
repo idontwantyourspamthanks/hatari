@@ -5282,7 +5282,9 @@ static int do_specialties (int cycles)
 	if (spcflags & SPCFLAG_BRK) {
 		unset_special(SPCFLAG_BRK);
 #ifdef DEBUGGER
-		if (debugging) {
+		/* The libretro session's breakpoint callback already ran from
+		 * DebugCpu_Check. UAE's console debugger would block here. */
+		if (debugging && !Main_LibretroSession()) {
 			debug();
 		}
 #endif
@@ -7712,7 +7714,9 @@ void m68k_go (int may_quit)
 		set_cpu_tracer (false);
 
 #ifdef DEBUGGER
-		if (debugging)
+		/* Same as the BRK path: an armed breakpoint sets `debugging`, and
+		 * the console debugger must not run inside the in-process core. */
+		if (debugging && !Main_LibretroSession())
 			debug ();
 #endif
 		if (regs.spcflags & SPCFLAG_MODE_CHANGE) {

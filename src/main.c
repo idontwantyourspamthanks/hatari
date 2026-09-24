@@ -353,6 +353,14 @@ void Main_WaitOnVbl(void)
 	nVBLCount++;
 	if (nRunVBLs &&	nVBLCount >= nRunVBLs)
 	{
+		/* The subprocess build exits after --run-vbls. The in-process core
+		 * returns to pist_hatari_run instead, with this frame already drawn. */
+		if (Main_LibretroSession()) {
+			nRunVBLs = 0;
+			bQuitProgram = true;
+			M68000_SetSpecial(SPCFLAG_BRK);
+			return;
+		}
 		/* show VBLs/s */
 		Main_PauseEmulation(true);
 		exit(0);
@@ -1102,6 +1110,11 @@ int Main_LibretroBringUp(int argc, const char * const *argv, char *err, int errC
 	sLibretroActive = 0;
 	sLibretroUp = 1;
 	return 0;
+}
+
+bool Main_LibretroSession(void)
+{
+	return sLibretroUp;
 }
 
 void Main_LibretroShutdown(void)

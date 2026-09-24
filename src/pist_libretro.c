@@ -14,13 +14,75 @@ const char PistLibretro_fileid[] = "Hatari pist_libretro.c";
 #include "pist_libretro_abi.h"
 
 #include "main.h"
+#include "breakcond.h"
+#include "debugui.h"
+#include "m68000.h"
+#include "screen.h"
 #include "stMemory.h"
 #include "tos.h"
 
+#include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
 
 static int sUp;
+static int sStarted;
+static int sStopped;
+
+/* M68000_Start arms a CPU reset. Hatari calls it once; a later call would
+ * reboot on every frame. m68k_go continues the machine that is already up. */
+extern void m68k_go(int may_quit);
+static uint8_t *sFrame;
+static size_t sFrameCap;
+
+/* Hatari calls this instead of reading the debugger console. The CPU loop
+ * then returns to pist_hatari_run. */
+static bool on_debugger(void)
+{
+	sStopped = 1;
+	bQuitProgram = true;
+	M68000_SetSpecial(SPCFLAG_BRK);
+	return true;
+}
+
+static void copy_frame(PistHatariFrame *frame)
+{
+	const uint8_t *src;
+	int x, y, w, h, pitch;
+	size_t bytes;
+
+	frame->pixels = NULL;
+	frame->width = 0;
+	frame->height = 0;
+	frame->pitch = 0;
+	if (!sdlscrn || !sdlscrn->pixels || sdlscrn->format->BytesPerPixel != 4)
+		return;
+
+	w = sdlscrn->w;
+	h = sdlscrn->h;
+	if (w <= 0 || h <= 0)
+		return;
+	pitch = w * 4;
+	bytes = (size_t)pitch * (size_t)h;
+	if (bytes > sFrameCap) {
+		uint8_t *grown = realloc(sFrame, bytes);
+		if (!grown)
+			return;
+		sFrame = grown;
+		sFrameCap = bytes;
+	}
+	src = sdlscrn->pixels;
+	for (y = 0; y < h; y++) {
+		const uint32_t *in = (const uint32_t *)(src + (size_t)y * (size_t)sdlscrn->pitch);
+		uint32_t *out = (uint32_t *)(sFrame + (size_t)y * (size_t)pitch);
+		for (x = 0; x < w; x++)
+			out[x] = in[x] | 0xFF000000u;
+	}
+	frame->pixels = sFrame;
+	frame->width = w;
+	frame->height = h;
+	frame->pitch = pitch;
+}
 
 static void set_error(char *err, int errCap, const char *text)
 {
@@ -29,6 +91,7 @@ static void set_error(char *err, int errCap, const char *text)
 }
 
 int pist_hatari_tos_version(void);
+uint32_t pist_hatari_pc(void);
 
 int pist_hatari_abi(void)
 {
@@ -97,7 +160,24 @@ int pist_hatari_start(const PistHatariSession *session, char *err, int errCap)
 	if (Main_LibretroBringUp(argc, argv, err, errCap) != 0)
 		return 1;
 
+	/* Replaces the HRDB break loop Main_Init registered. A breakpoint
+	 * returns here instead of waiting on TCP or stdin. */
+	DebugUI_RegisterRemoteDebug(on_debugger);
+	/* A previous session in this process leaves its breakpoints behind.
+	 * The same entry stop the subprocess bootstrap script arms. TEXT is a
+	 * Hatari variable, so this matches the program base once GEMDOS loads
+	 * it and does not match ROM. */
+	BreakCond_Command("all", false);
+	if (!DebugUI_ParseLine("b pc = TEXT && pc < $e00000 :once")) {
+		Main_LibretroShutdown();
+		set_error(err, errCap, "Could not arm the entry breakpoint");
+		return 1;
+	}
+
+	sStopped = 0;
+	sStarted = 0;
 	sUp = 1;
+	Main_UnPauseEmulation();
 	return 0;
 }
 
@@ -107,23 +187,41 @@ void pist_hatari_stop(void)
 		return;
 	Main_LibretroShutdown();
 	sUp = 0;
+	sStarted = 0;
+	sStopped = 0;
+	free(sFrame);
+	sFrame = NULL;
+	sFrameCap = 0;
+}
+
+uint32_t pist_hatari_pc(void)
+{
+	return sUp ? M68000_GetPC() : 0;
 }
 
 int pist_hatari_run(PistHatariFrame *frame, int *stopped)
 {
-	if (frame) {
-		frame->pixels = NULL;
-		frame->width = 0;
-		frame->height = 0;
-		frame->pitch = 0;
-	}
-	if (stopped)
-		*stopped = sUp ? 1 : 0;
-	if (!sUp) {
+	if (!sUp)
 		return 1;
+
+	/* One frame, or the debugger, whichever comes first. A later call
+	 * while stopped does not resume; that is pist_hatari_resume. */
+	if (!sStopped) {
+		bQuitProgram = false;
+		Main_SetRunVBLs(1);
+		if (!sStarted) {
+			M68000_Start();
+			sStarted = 1;
+		} else {
+			m68k_go(1);
+		}
+		bQuitProgram = false;
 	}
-	/* The machine is up and stopped. Running it to a frame is the next
-	 * piece; the CPU loop still blocks inside m68k_go. */
+
+	if (frame)
+		copy_frame(frame);
+	if (stopped)
+		*stopped = sStopped;
 	return 0;
 }
 

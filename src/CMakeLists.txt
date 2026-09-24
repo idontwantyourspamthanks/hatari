@@ -287,6 +287,11 @@ if(PIST_LIBRETRO)
 	target_link_libraries(pist_tos_path hatari_libretro)
 	target_include_directories(pist_tos_path PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 	set_target_properties(pist_tos_path PROPERTIES BUILD_RPATH "\$ORIGIN")
+
+	add_executable(pist_frame ${CMAKE_SOURCE_DIR}/tests/pist_frame.c)
+	target_link_libraries(pist_frame hatari_libretro)
+	target_include_directories(pist_frame PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+	set_target_properties(pist_frame PROPERTIES BUILD_RPATH "\$ORIGIN")
 endif()
 
 
