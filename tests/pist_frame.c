@@ -126,6 +126,10 @@ int main(int argc, char **argv)
 		fprintf(stderr, "a key was accepted before the machine was up\n");
 		return 1;
 	}
+	if (pist_hatari_mouse(1, 1, 1) == 0) {
+		fprintf(stderr, "the mouse was accepted before the machine was up\n");
+		return 1;
+	}
 
 	if (start_session(rom, NULL) != 0)
 		return 1;
@@ -197,6 +201,29 @@ int main(int argc, char **argv)
 		return 1;
 	}
 	pist_hatari_key(SDLK_F12, 0, 0);
+
+	/* Motion is in ST pixels and accumulates until the next VBL. Buttons are
+	 * the current state, not an edge. */
+	{
+		const int dx = KeyboardProcessor.Mouse.dx;
+		const int dy = KeyboardProcessor.Mouse.dy;
+		if (pist_hatari_mouse(4, -3, 1) != 0 ||
+		    KeyboardProcessor.Mouse.dx != dx + 4 ||
+		    KeyboardProcessor.Mouse.dy != dy - 3 ||
+		    (Keyboard.bLButtonDown & BUTTON_MOUSE) == 0) {
+			fprintf(stderr, "mouse down did not move or press\n");
+			pist_hatari_stop();
+			return 1;
+		}
+		if (pist_hatari_mouse(0, 0, 2) != 0 ||
+		    (Keyboard.bLButtonDown & BUTTON_MOUSE) != 0 ||
+		    (Keyboard.bRButtonDown & BUTTON_MOUSE) == 0) {
+			fprintf(stderr, "mouse buttons did not follow the host\n");
+			pist_hatari_stop();
+			return 1;
+		}
+		pist_hatari_mouse(0, 0, 0);
+	}
 
 	/* The entry condition is `pc = TEXT`, so the base and the PC agree.
 	 * A short register buffer must report how many were needed and write

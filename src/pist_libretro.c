@@ -19,6 +19,7 @@ const char PistLibretro_fileid[] = "Hatari pist_libretro.c";
 #include "debugcpu.h"
 #include "debugInfo.h"
 #include "debugui.h"
+#include "ikbd.h"
 #include "keymap.h"
 #include "m68000.h"
 #include "newcpu.h"
@@ -347,6 +348,25 @@ int pist_hatari_arm_breakpoint(const char *condition)
 	if (!sUp || !condition || !condition[0])
 		return 1;
 	return DebugUI_ParseLine(condition) ? 0 : 1;
+}
+
+int pist_hatari_mouse(int dx, int dy, int buttons)
+{
+	if (!sUp)
+		return 1;
+	/* Already in ST pixels. Hatari's own motion handler also divides by the
+	 * SDL window scale; that scale is the panel's job, not this one's. */
+	KeyboardProcessor.Mouse.dx += dx;
+	KeyboardProcessor.Mouse.dy += dy;
+	if (buttons & 1)
+		Keyboard.bLButtonDown |= BUTTON_MOUSE;
+	else
+		Keyboard.bLButtonDown &= ~BUTTON_MOUSE;
+	if (buttons & 2)
+		Keyboard.bRButtonDown |= BUTTON_MOUSE;
+	else
+		Keyboard.bRButtonDown &= ~BUTTON_MOUSE;
+	return 0;
 }
 
 int pist_hatari_key(int sym, int mod, int down)
