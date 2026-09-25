@@ -595,3 +595,10 @@ void SDL_PauseAudioDevice(Uint32 dev, int pause_on)
 }
 void SDL_LockAudio(void) {}
 void SDL_UnlockAudio(void) {}
+
+/* Hatari's Windows build opens a console for the debugger. Inside PiST that
+ * would be a second window; the debugger text is captured by pist_libretro.c. */
+#ifdef _WIN32
+void Win_OpenCon(void) {}
+void Win_ForceCon(void) {}
+#endif
