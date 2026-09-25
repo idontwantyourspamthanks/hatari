@@ -893,7 +893,11 @@ FILE *INF_OpenOverride(const char *filename)
 			ExceptionDebugMask = ConfigureParams.Debugger.nExceptionDebugMask & ~EXCEPT_AUTOSTART;
 			Log_Printf(LOG_INFO, "Exception debugging enabled (0x%x).\n", ExceptionDebugMask);
 		}
-		Log_Printf(LOG_DEBUG, "Virtual INF file '%s' matched.\n", filename);
+		clearerr(TosOverride.file);
+		if (fseek(TosOverride.file, 0, SEEK_SET) != 0)
+			Log_Printf(LOG_WARN, "Virtual INF '%s' rewind failed\n", filename);
+		else
+			Log_Printf(LOG_INFO, "Virtual INF '%s' opened\n", filename);
 		return TosOverride.file;
 	}
 	return NULL;

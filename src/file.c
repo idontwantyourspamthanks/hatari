@@ -1060,6 +1060,7 @@ void File_HandleDotDirs(char *path)
 
 
 #if defined(WIN32)
+#include <io.h>
 static TCHAR szTempFileName[MAX_PATH];
 
 /*-----------------------------------------------------------------------*/
@@ -1093,6 +1094,38 @@ static char* WinTmpFile(void)
 	}
 	return (char*)szTempFileName;
 }
+
+/* tmpfile() on UCRT returns a stream that _fseeki64 rejects. This build's
+ * fseeko is that call. GEMDOS sizes a file with it before reading, so the
+ * autostart EMUDESK.INF comes back as a seek error, EmuTOS never sees the
+ * #Z line, and the desktop sits there with the program unstarted. A normal
+ * temp file seeks. FILE_FLAG_DELETE_ON_CLOSE drops it when the handle closes. */
+static FILE *WinOpenTemp(const char *name)
+{
+	HANDLE handle;
+	int fd;
+	FILE *fh;
+
+	handle = CreateFileA(name,
+		GENERIC_READ | GENERIC_WRITE,
+		FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+		NULL, OPEN_EXISTING,
+		FILE_ATTRIBUTE_TEMPORARY | FILE_FLAG_DELETE_ON_CLOSE,
+		NULL);
+	if (handle == INVALID_HANDLE_VALUE) {
+		DeleteFileA(name);
+		return NULL;
+	}
+	fd = _open_osfhandle((intptr_t)handle, _O_RDWR | _O_BINARY);
+	if (fd < 0) {
+		CloseHandle(handle);
+		return NULL;
+	}
+	fh = _fdopen(fd, "w+b");
+	if (!fh)
+		_close(fd);
+	return fh;
+}
 #endif
 
 /**
@@ -1105,16 +1138,16 @@ FILE *File_OpenTempFile(char **psFileName)
 	FILE *fh;
 	char *psTmpName = NULL;
 
-	fh = tmpfile();            /* Open temporary file */
-
 #if defined(WIN32)
+	psTmpName = WinTmpFile();
+	if (psTmpName)
+		fh = WinOpenTemp(psTmpName);
+	else
+		fh = NULL;
 	if (!fh)
-	{
-		/* Unfortunately tmpfile() needs administrative privileges on
-		 * Windows, so if it failed, let's work around this issue. */
-		psTmpName = WinTmpFile();
-		fh = fopen(psTmpName, "w+b");
-	}
+		psTmpName = NULL;
+#else
+	fh = tmpfile();
 #endif
 
 	if (psFileName)

@@ -2343,20 +2343,45 @@ static bool GemDOS_Read(uint32_t Params)
 		return true;
 	}
 	
-	/* To quick check to see where our file pointer is and how large the file is */
-	CurrentPos = ftello(FileHandles[Handle].FileHandle);
-	if (CurrentPos == -1L
-	    || fseeko(FileHandles[Handle].FileHandle, 0, SEEK_END) != 0)
+	/* Size the file, then return to the read position. fseeko is
+	 * _fseeki64 with large-file support, and the UCRT rejects that on a
+	 * tmpfile() stream. fseek still works there, and the autostart INF
+	 * is read from the start, so a failed 64-bit tell means position 0. */
 	{
-		Regs[REG_D0] = GEMDOS_E_SEEK;
-		return true;
-	}
-	FileSize = ftello(FileHandles[Handle].FileHandle);
-	if (FileSize == -1L
-	    || fseeko(FileHandles[Handle].FileHandle, CurrentPos, SEEK_SET) != 0)
-	{
-		Regs[REG_D0] = GEMDOS_E_SEEK;
-		return true;
+		FILE *fp = FileHandles[Handle].FileHandle;
+		CurrentPos = ftello(fp);
+		if (CurrentPos != -1L && fseeko(fp, 0, SEEK_END) == 0)
+		{
+			FileSize = ftello(fp);
+			if (FileSize == -1L || fseeko(fp, CurrentPos, SEEK_SET) != 0)
+			{
+				Log_Printf(LOG_WARN, "GEMDOS Fread seek failed on '%s'\n",
+					   FileHandles[Handle].szActualName);
+				Regs[REG_D0] = GEMDOS_E_SEEK;
+				return true;
+			}
+		}
+		else
+		{
+			clearerr(fp);
+			if (CurrentPos < 0)
+				CurrentPos = 0;
+			if (fseek(fp, 0, SEEK_END) != 0)
+			{
+				Log_Printf(LOG_WARN, "GEMDOS Fread seek failed on '%s'\n",
+					   FileHandles[Handle].szActualName);
+				Regs[REG_D0] = GEMDOS_E_SEEK;
+				return true;
+			}
+			FileSize = ftell(fp);
+			if (FileSize == -1L || fseek(fp, (long)CurrentPos, SEEK_SET) != 0)
+			{
+				Log_Printf(LOG_WARN, "GEMDOS Fread seek failed on '%s'\n",
+					   FileHandles[Handle].szActualName);
+				Regs[REG_D0] = GEMDOS_E_SEEK;
+				return true;
+			}
+		}
 	}
 
 	nBytesLeft = FileSize-CurrentPos;
