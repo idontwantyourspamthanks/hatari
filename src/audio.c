@@ -108,6 +108,37 @@ static void Audio_CallBack(void *userdata, Uint8 *stream, int len)
 
 /*-----------------------------------------------------------------------*/
 /**
+ * Copy queued stereo frames out of the mix ring. The libretro host calls
+ * this; SDL's callback is not running. `interleaved` is left, right, ...
+ */
+int Audio_Read(int16_t *interleaved, int frames)
+{
+	int n, i;
+
+	if (!bSoundWorking || !interleaved || frames <= 0)
+		return 0;
+
+	Audio_Lock();
+	n = nGeneratedSamples;
+	if (n > frames)
+		n = frames;
+	if (n < 0)
+		n = 0;
+	for (i = 0; i < n; i++)
+	{
+		const int pos = (AudioMixBuffer_pos_read + i) & AUDIOMIXBUFFER_SIZE_MASK;
+		interleaved[i * 2] = AudioMixBuffer[pos][0];
+		interleaved[i * 2 + 1] = AudioMixBuffer[pos][1];
+	}
+	AudioMixBuffer_pos_read = (AudioMixBuffer_pos_read + n) & AUDIOMIXBUFFER_SIZE_MASK;
+	nGeneratedSamples -= n;
+	Audio_Unlock();
+	return n;
+}
+
+
+/*-----------------------------------------------------------------------*/
+/**
  * Initialize the audio subsystem. Return true if all OK.
  * We use direct access to the sound buffer, set to a unsigned 8-bit mono stream.
  */

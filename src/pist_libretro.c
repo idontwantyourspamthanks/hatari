@@ -14,6 +14,7 @@ const char PistLibretro_fileid[] = "Hatari pist_libretro.c";
 #include "pist_libretro_abi.h"
 
 #include "main.h"
+#include "audio.h"
 #include "breakcond.h"
 #include "configuration.h"
 #include "debugcpu.h"
@@ -140,8 +141,6 @@ int pist_hatari_start(const PistHatariSession *session, char *err, int errCap)
 	}
 	argv[argc++] = "--monitor";
 	argv[argc++] = "mono";
-	argv[argc++] = "--sound";
-	argv[argc++] = "off";
 	argv[argc++] = "--alert-level";
 	argv[argc++] = "fatal";
 	argv[argc++] = "--confirm-quit";
@@ -367,6 +366,13 @@ int pist_hatari_mouse(int dx, int dy, int buttons)
 	else
 		Keyboard.bRButtonDown &= ~BUTTON_MOUSE;
 	return 0;
+}
+
+int pist_hatari_audio(int16_t *interleaved, int frames)
+{
+	if (!sUp)
+		return 0;
+	return Audio_Read(interleaved, frames);
 }
 
 int pist_hatari_key(int sym, int mod, int down)

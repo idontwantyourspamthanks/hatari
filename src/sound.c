@@ -1780,7 +1780,16 @@ void Sound_Update(uint64_t CPU_Clock)
 	/* AudioMixBuffer_pos_read.								*/
 	/* In the case of fast forward, we do nothing here, Sound_BufferIndexNeedReset will be	*/
 	/* set when the user exits fast forward mode.						*/
-	if ( ( Samples_Nbr > AUDIOMIXBUFFER_SIZE - nGeneratedSamples_before ) && ( ConfigureParams.System.bFastForward == false )
+	/* A libretro frame does not play through SDL. The host pulls with
+	 * Audio_Read. Fast-forward used to let this ring wrap over itself;
+	 * keep the newest samples when that pull has not happened yet. */
+	if (Main_LibretroSession() && nGeneratedSamples > AUDIOMIXBUFFER_SIZE)
+	{
+		int drop = nGeneratedSamples - AUDIOMIXBUFFER_SIZE;
+		AudioMixBuffer_pos_read = (AudioMixBuffer_pos_read + drop) & AUDIOMIXBUFFER_SIZE_MASK;
+		nGeneratedSamples = AUDIOMIXBUFFER_SIZE;
+	}
+	else if ( ( Samples_Nbr > AUDIOMIXBUFFER_SIZE - nGeneratedSamples_before ) && ( ConfigureParams.System.bFastForward == false )
 	    && ( ConfigureParams.Sound.bEnableSound == true ) )
 	{
 		static int logcnt = 0;

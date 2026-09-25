@@ -568,9 +568,12 @@ Uint8 SDL_JoystickGetHat(SDL_Joystick *joystick, int hat)
 
 int SDL_OpenAudio(SDL_AudioSpec *desired, SDL_AudioSpec *obtained)
 {
-	(void)desired;
-	(void)obtained;
-	return -1;
+	/* Success, and the caller's spec stands. There is no device: PiST
+	 * pulls the mix ring itself. A failure here makes Audio_Init turn
+	 * sound off for the rest of the session. */
+	if (obtained && desired)
+		*obtained = *desired;
+	return 0;
 }
 Uint32 SDL_OpenAudioDevice(const char *device, int iscapture, const SDL_AudioSpec *desired,
                            SDL_AudioSpec *obtained, int allowed_changes)

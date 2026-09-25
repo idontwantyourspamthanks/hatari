@@ -130,6 +130,13 @@ int main(int argc, char **argv)
 		fprintf(stderr, "the mouse was accepted before the machine was up\n");
 		return 1;
 	}
+	{
+		int16_t buf[16 * 2];
+		if (pist_hatari_audio(buf, 16) != 0) {
+			fprintf(stderr, "audio returned samples before the machine was up\n");
+			return 1;
+		}
+	}
 
 	if (start_session(rom, NULL) != 0)
 		return 1;
@@ -149,6 +156,16 @@ int main(int argc, char **argv)
 	}
 	printf("frame %dx%d pitch %d after %d vb, ink %d, stopped %d, pc %08x\n",
 	       frame.width, frame.height, frame.pitch, i, ink, stopped, pist_hatari_pc());
+	{
+		int16_t buf[4096 * 2];
+		int n = pist_hatari_audio(buf, 4096);
+		if (n <= 0) {
+			fprintf(stderr, "desktop produced no audio\n");
+			pist_hatari_stop();
+			return 1;
+		}
+		printf("audio frames %d\n", n);
+	}
 	pist_hatari_stop();
 	if (!ink) {
 		fprintf(stderr, "300 frames stayed black\n");
@@ -322,6 +339,41 @@ int main(int argc, char **argv)
 				return 1;
 			}
 		}
+		/* One running frame, after the ring has been emptied, is one
+		 * VBL of samples and then nothing until the next frame. */
+		{
+			int16_t buf[4096 * 2];
+			int got;
+			int guard;
+			for (guard = 0; guard < 8; guard++) {
+				if (pist_hatari_audio(buf, 4096) <= 0)
+					break;
+			}
+			if (guard == 8) {
+				fprintf(stderr, "audio ring did not drain\n");
+				pist_hatari_stop();
+				return 1;
+			}
+			stopped = 0;
+			memset(&frame, 0, sizeof(frame));
+			if (pist_hatari_run(&frame, &stopped) != 0 || stopped) {
+				fprintf(stderr, "run failed while checking audio\n");
+				pist_hatari_stop();
+				return 1;
+			}
+			got = pist_hatari_audio(buf, 4096);
+			if (got < 100 || got > 4000) {
+				fprintf(stderr, "one frame produced %d audio frames\n", got);
+				pist_hatari_stop();
+				return 1;
+			}
+			if (pist_hatari_audio(buf, 4096) != 0) {
+				fprintf(stderr, "audio was not empty after one pull\n");
+				pist_hatari_stop();
+				return 1;
+			}
+		}
+
 		/* Host motion is delivered by the IKBD autosend interrupt.
 		 * Ending a frame sets the quit flag, and that interrupt used
 		 * to treat the flag as a real quit and never arm itself again.
@@ -388,7 +440,7 @@ int main(int argc, char **argv)
 			pist_hatari_stop();
 			return 1;
 		}
-		printf("keys, step, registers, breakpoint and pause ok, pc %08x\n", pist_hatari_pc());
+		printf("keys, step, registers, breakpoint, audio and pause ok, pc %08x\n", pist_hatari_pc());
 	}
 
 	pist_hatari_stop();

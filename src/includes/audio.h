@@ -8,6 +8,8 @@
 #ifndef HATARI_AUDIO_H
 #define HATARI_AUDIO_H
 
+#include <stdint.h>
+
 extern int nAudioFrequency;
 extern bool bSoundWorking;
 extern int SoundBufferSize;
@@ -22,5 +24,9 @@ extern void Audio_Unlock(void);
 extern void Audio_FreeSoundBuffer(void);
 extern void Audio_SetOutputAudioFreq(int Frequency);
 extern void Audio_EnableAudio(bool bEnable);
+
+/* Copy up to `frames` stereo frames out of the mix ring. Returns how many
+ * were copied. 0 when sound is off or the ring is empty. */
+extern int Audio_Read(int16_t *interleaved, int frames);
 
 #endif  /* HATARI_AUDIO_H */
