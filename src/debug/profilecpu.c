@@ -878,6 +878,14 @@ bool Profile_CpuStart(void)
 	int savePrevFamily;
 	uint32_t savePrevPC;
 
+	/* Already collecting. DebugCpu_SetDebugging runs this after every
+	 * debugger line, including the disassembler switch that comes before
+	 * a profile save. Freeing the buffer here would discard the counts
+	 * that save is about to write. A fresh buffer is allocated only when
+	 * profiling has just been switched on. */
+	if (cpu_profile.enabled && cpu_profile.data)
+		return true;
+
 	Profile_CpuFree();
 	if (!cpu_profile.enabled) {
 		return false;

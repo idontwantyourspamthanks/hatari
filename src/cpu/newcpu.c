@@ -7919,7 +7919,11 @@ void m68k_disasm_file_wrapper (FILE *f, uaecptr addr, uaecptr *nextpc, uaecptr l
 	if ( currprefs.cpu_model == 68030 && currprefs.mmu_model )		/* 68030 with MMU */
 		new_addr = mmu030_translate(addr, regs.s != 0, false, false);
 
-	m68k_disasm_file(TraceFile, new_addr, nextpc, lastpc, cnt);
+	/* `f` is the file the caller asked for. A profile save passes its
+	 * output file; TraceFile is the trace stream, which is stderr unless
+	 * a trace log was opened. Writing the save there leaves the file with
+	 * nothing but its header. */
+	m68k_disasm_file(f ? f : TraceFile, new_addr, nextpc, lastpc, cnt);
 }
 #endif
 

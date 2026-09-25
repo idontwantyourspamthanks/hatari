@@ -408,6 +408,59 @@ int main(int argc, char **argv)
 			}
 		}
 
+		/* Collect across one step of the bra, then the same disassembler
+		 * switch the IDE does before a save. The switch must leave the
+		 * counts in place, and the save file must hold the instruction
+		 * rather than only the header. */
+		{
+			char path[512];
+			char cmd[576];
+			char out[4096];
+			char got[65536];
+			FILE *pf;
+			size_t nread;
+
+			snprintf(path, sizeof(path), "%s/profile.txt", dir);
+			if (pist_hatari_command("profile on", out, (int)sizeof(out), NULL) != 0
+			    || pist_hatari_step() != 0) {
+				fprintf(stderr, "profile on or its step failed: %s\n", out);
+				pist_hatari_stop();
+				return 1;
+			}
+			pist_hatari_command("setopt --disasm ext", out, (int)sizeof(out), NULL);
+			if (pist_hatari_command("setopt --disasm uae", out, (int)sizeof(out), NULL) != 0) {
+				fprintf(stderr, "could not select the uae disassembler: %s\n", out);
+				pist_hatari_stop();
+				return 1;
+			}
+			snprintf(cmd, sizeof(cmd), "profile save %s", path);
+			if (pist_hatari_command(cmd, out, (int)sizeof(out), NULL) != 0) {
+				fprintf(stderr, "profile save failed: %s\n", out);
+				pist_hatari_stop();
+				return 1;
+			}
+			pf = fopen(path, "r");
+			if (!pf) {
+				fprintf(stderr, "profile file missing: %s\n", path);
+				pist_hatari_stop();
+				return 1;
+			}
+			nread = fread(got, 1, sizeof(got) - 1, pf);
+			got[nread] = '\0';
+			fclose(pf);
+			if (!strstr(got, "Hatari CPU profile") || !strstr(got, "%")) {
+				fprintf(stderr, "profile file has no instruction counts:\n%s\n", got);
+				pist_hatari_stop();
+				return 1;
+			}
+			if (pist_hatari_command("profile off", out, (int)sizeof(out), NULL) != 0
+			    || pist_hatari_pc() != text + 2) {
+				fprintf(stderr, "profile off moved the PC to %08x\n", pist_hatari_pc());
+				pist_hatari_stop();
+				return 1;
+			}
+		}
+
 		/* The bra branches to itself, so a step and a step-over both
 		 * stay on it. step-over is not a subroutine here; it is the
 		 * one-instruction path of `n`. */
