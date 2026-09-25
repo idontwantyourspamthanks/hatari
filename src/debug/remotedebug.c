@@ -1596,24 +1596,22 @@ static int RemoteDebugState_TryAccept(RemoteDebugState* state, bool blocking)
 {
 	fd_set set;
 	struct timeval timeout;
+	int rv;
 
-	if (blocking)
-	{
-		// Connection active
-		// Check socket with timeout
-		FD_ZERO(&set);
-		FD_SET(state->SocketFD, &set);
+	/* Always poll first. The running frame loop calls this with blocking
+	 * false on every pass. A non-blocking accept() is not enough on Winsock:
+	 * if FIONBIO did not take, accept() waits for a client and the machine
+	 * never reaches the program. select() with a zero timeout returns
+	 * immediately when nobody is waiting. */
+	FD_ZERO(&set);
+	FD_SET(state->SocketFD, &set);
+	timeout.tv_sec = 0;
+	timeout.tv_usec = blocking ? RDB_SELECT_TIMEOUT_USEC : 0;
+	rv = select(state->SocketFD + 1, &set, NULL, NULL, &timeout);
+	if (rv <= 0)
+		return state->AcceptedFD;
 
-		// On Linux, need to reset the timeout on each loop
-		// see "select(2)"
-		timeout.tv_sec = 0;
-		timeout.tv_usec = RDB_SELECT_TIMEOUT_USEC;
-		int rv = select(state->SocketFD + 1, &set, NULL, NULL, &timeout);
-		if (rv <= 0)
-			return state->AcceptedFD;
-	}
-
-	state->AcceptedFD = accept(state->SocketFD, NULL, NULL);
+	state->AcceptedFD = (int)accept(state->SocketFD, NULL, NULL);
 	if (state->AcceptedFD != -1)
 	{
 		printf("Remote Debug connection accepted\n");
@@ -1968,6 +1966,13 @@ void RemoteDebug_Init(void)
 {
 	printf("Starting remote debug\n");
 	RemoteDebugState_Init(&g_rdbState);
+
+#ifdef __LIBRETRO__
+	/* The in-process host stops the CPU through its own callback. This
+	 * listener is the hrdb TCP port, and polling it from the frame thread
+	 * is what froze the Windows boot before the entry breakpoint. */
+	return;
+#endif
 
 #if HAVE_WINSOCK_SOCKETS
 	WORD wVersionRequested;

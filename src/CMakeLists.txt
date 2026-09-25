@@ -242,6 +242,9 @@ if(PIST_LIBRETRO)
 	set_target_properties(hatari_libretro PROPERTIES PREFIX "" OUTPUT_NAME "hatari_libretro")
 	if(PIST_LIBRETRO_STUB_SDL)
 		target_compile_definitions(hatari_libretro PRIVATE __LIBRETRO__)
+		# remotedebug.c lives in the Debug archive, which is built before
+		# this target. The in-process core must not open the hrdb port.
+		target_compile_definitions(Debug PRIVATE __LIBRETRO__)
 		set(HATARI_TARGETS hatari_libretro)
 	else()
 		set(HATARI_TARGETS ${APP_NAME} hatari_libretro)
