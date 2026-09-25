@@ -32,6 +32,11 @@ const char PistLibretro_fileid[] = "Hatari pist_libretro.c";
 #include <stdio.h>
 #include <string.h>
 #include <unistd.h>
+#ifdef _WIN32
+#include <windows.h>
+#include <io.h>
+#include <fcntl.h>
+#endif
 
 static int sUp;
 static int sStarted;
@@ -394,15 +399,40 @@ int pist_hatari_mouse(int dx, int dy, int buttons)
 }
 
 /* Debugger text is fprintf(stderr). A pipe would deadlock once the command
- * filled it; a short-lived file does not. The window is this thread only. */
+ * filled it; a short-lived file does not. The window is this thread only.
+ * On Windows the file is in the process temp directory and is removed when
+ * its handle closes: a MinGW process launched outside an MSYS shell has no
+ * /tmp, and an open file there cannot be unlinked the Unix way. */
 static int redirect_stderr(int *saved, int *fd)
 {
+#ifdef _WIN32
+	char dir[MAX_PATH];
+	char path[MAX_PATH];
+	HANDLE handle;
+
+	if (!GetTempPathA(sizeof(dir), dir))
+		return 1;
+	if (!GetTempFileNameA(dir, "pdbg", 0, path))
+		return 1;
+	handle = CreateFileA(path, GENERIC_READ | GENERIC_WRITE,
+		FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+		NULL, CREATE_ALWAYS,
+		FILE_ATTRIBUTE_TEMPORARY | FILE_FLAG_DELETE_ON_CLOSE, NULL);
+	if (handle == INVALID_HANDLE_VALUE)
+		return 1;
+	*fd = _open_osfhandle((intptr_t)handle, _O_RDWR | _O_BINARY);
+	if (*fd < 0) {
+		CloseHandle(handle);
+		return 1;
+	}
+#else
 	char path[] = "/tmp/pist-dbg-XXXXXX";
 
 	*fd = mkstemp(path);
 	if (*fd < 0)
 		return 1;
 	unlink(path);
+#endif
 	fflush(stderr);
 	*saved = dup(STDERR_FILENO);
 	if (*saved < 0) {
