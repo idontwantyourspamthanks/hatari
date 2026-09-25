@@ -15,9 +15,11 @@ const char PistLibretro_fileid[] = "Hatari pist_libretro.c";
 
 #include "main.h"
 #include "breakcond.h"
+#include "configuration.h"
 #include "debugcpu.h"
 #include "debugInfo.h"
 #include "debugui.h"
+#include "keymap.h"
 #include "m68000.h"
 #include "newcpu.h"
 #include "screen.h"
@@ -162,6 +164,16 @@ int pist_hatari_start(const PistHatariSession *session, char *err, int errCap)
 
 	if (Main_LibretroBringUp(argc, argv, err, errCap) != 0)
 		return 1;
+
+	/* PiST owns the shortcuts. Hatari's defaults swallow F11, F12 and
+	 * Pause, which the ST keyboard still has. */
+	{
+		int i;
+		for (i = 0; i < SHORTCUT_KEYS; i++) {
+			ConfigureParams.Shortcut.withModifier[i] = SDLK_UNKNOWN;
+			ConfigureParams.Shortcut.withoutModifier[i] = SDLK_UNKNOWN;
+		}
+	}
 
 	/* Replaces the HRDB break loop Main_Init registered. A breakpoint
 	 * returns here instead of waiting on TCP or stdin. */
@@ -335,6 +347,22 @@ int pist_hatari_arm_breakpoint(const char *condition)
 	if (!sUp || !condition || !condition[0])
 		return 1;
 	return DebugUI_ParseLine(condition) ? 0 : 1;
+}
+
+int pist_hatari_key(int sym, int mod, int down)
+{
+	SDL_Keysym key;
+
+	if (!sUp)
+		return 1;
+	memset(&key, 0, sizeof(key));
+	key.sym = sym;
+	key.mod = (Uint16)mod;
+	if (down)
+		Keymap_KeyDown(&key);
+	else
+		Keymap_KeyUp(&key);
+	return 0;
 }
 
 int pist_hatari_clear_breakpoints(void)

@@ -7,11 +7,15 @@
 
 #include "pist_libretro_abi.h"
 
+#include <SDL.h>
+#include <stdbool.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
+
+#include "ikbd.h"
 
 uint32_t pist_hatari_pc(void);
 
@@ -118,6 +122,11 @@ int main(int argc, char **argv)
 	}
 	printf("ROM %s\n", rom);
 
+	if (pist_hatari_key(SDLK_a, 0, 1) == 0) {
+		fprintf(stderr, "a key was accepted before the machine was up\n");
+		return 1;
+	}
+
 	if (start_session(rom, NULL) != 0)
 		return 1;
 	for (i = 0; i < 300 && !ink; i++) {
@@ -169,6 +178,25 @@ int main(int argc, char **argv)
 		pist_hatari_stop();
 		return 1;
 	}
+
+	/* 'a' is ST scancode 0x1e. F12 is a Hatari shortcut unless that table
+	 * was cleared; the ST key is Undo, scancode 0x61. */
+	if (pist_hatari_key(SDLK_a, 0, 1) != 0 || !Keyboard.KeyStates[0x1e]) {
+		fprintf(stderr, "key down did not press ST scancode 0x1e\n");
+		pist_hatari_stop();
+		return 1;
+	}
+	if (pist_hatari_key(SDLK_a, 0, 0) != 0 || Keyboard.KeyStates[0x1e]) {
+		fprintf(stderr, "key up did not release ST scancode 0x1e\n");
+		pist_hatari_stop();
+		return 1;
+	}
+	if (pist_hatari_key(SDLK_F12, 0, 1) != 0 || !Keyboard.KeyStates[0x61]) {
+		fprintf(stderr, "F12 did not reach the ST\n");
+		pist_hatari_stop();
+		return 1;
+	}
+	pist_hatari_key(SDLK_F12, 0, 0);
 
 	/* The entry condition is `pc = TEXT`, so the base and the PC agree.
 	 * A short register buffer must report how many were needed and write
@@ -286,7 +314,7 @@ int main(int argc, char **argv)
 			pist_hatari_stop();
 			return 1;
 		}
-		printf("step, registers, breakpoint and pause ok, pc %08x\n", pist_hatari_pc());
+		printf("keys, step, registers, breakpoint and pause ok, pc %08x\n", pist_hatari_pc());
 	}
 
 	pist_hatari_stop();
