@@ -31,6 +31,7 @@ const char PistLibretro_fileid[] = "Hatari pist_libretro.c";
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
+#include <unistd.h>
 
 static int sUp;
 static int sStarted;
@@ -209,6 +210,13 @@ int pist_hatari_start(const PistHatariSession *session, char *err, int errCap)
 	sStopped = 0;
 	sStarted = 0;
 	sUp = 1;
+	/* The subprocess bootstrap script arms this before the program runs.
+	 * Without it the history pane has nothing to show. */
+	if (pist_hatari_command("history cpu", NULL, 0, NULL) != 0) {
+		pist_hatari_stop();
+		set_error(err, errCap, "Could not enable CPU history");
+		return 1;
+	}
 	Main_UnPauseEmulation();
 	return 0;
 }
@@ -382,6 +390,105 @@ int pist_hatari_mouse(int dx, int dy, int buttons)
 		Keyboard.bRButtonDown |= BUTTON_MOUSE;
 	else
 		Keyboard.bRButtonDown &= ~BUTTON_MOUSE;
+	return 0;
+}
+
+/* Debugger text is fprintf(stderr). A pipe would deadlock once the command
+ * filled it; a short-lived file does not. The window is this thread only. */
+static int redirect_stderr(int *saved, int *fd)
+{
+	char path[] = "/tmp/pist-dbg-XXXXXX";
+
+	*fd = mkstemp(path);
+	if (*fd < 0)
+		return 1;
+	unlink(path);
+	fflush(stderr);
+	*saved = dup(STDERR_FILENO);
+	if (*saved < 0) {
+		close(*fd);
+		*fd = -1;
+		return 1;
+	}
+	if (dup2(*fd, STDERR_FILENO) < 0) {
+		close(*saved);
+		close(*fd);
+		*saved = -1;
+		*fd = -1;
+		return 1;
+	}
+	return 0;
+}
+
+static void restore_stderr(int saved)
+{
+	fflush(stderr);
+	if (saved >= 0) {
+		dup2(saved, STDERR_FILENO);
+		close(saved);
+	}
+}
+
+static void copy_capture(int fd, char *out, int outCap, int *needed)
+{
+	off_t end;
+	int n, got;
+
+	end = lseek(fd, 0, SEEK_END);
+	if (end < 0)
+		end = 0;
+	if (needed)
+		*needed = end > 0x7fffffff ? 0x7fffffff : (int)end;
+	if (!out || outCap <= 0)
+		return;
+	n = (int)end;
+	if (n > outCap - 1)
+		n = outCap - 1;
+	if (n < 0)
+		n = 0;
+	if (n == 0 || lseek(fd, 0, SEEK_SET) < 0) {
+		out[0] = '\0';
+		return;
+	}
+	got = 0;
+	while (got < n) {
+		ssize_t r = read(fd, out + got, (size_t)(n - got));
+		if (r <= 0)
+			break;
+		got += (int)r;
+	}
+	out[got] = '\0';
+}
+
+int pist_hatari_command(const char *line, char *out, int outCap, int *needed)
+{
+	int saved = -1;
+	int fd = -1;
+	int wasStopped;
+	int leave;
+
+	if (needed)
+		*needed = 0;
+	if (out && outCap > 0)
+		out[0] = '\0';
+	if (!sUp || !line || !line[0])
+		return 1;
+	if (redirect_stderr(&saved, &fd) != 0)
+		return 1;
+
+	wasStopped = sStopped;
+	/* CMDCONT is a repeatable line such as `d`: it stays stopped. Only END
+	 * leaves the debugger (continue, a step, a step-over). ParseLine already
+	 * re-armed the per-instruction hook. The CPU is not started from here. */
+	leave = DebugUI_ParseLineCode(line) == DEBUGGER_END;
+	restore_stderr(saved);
+	copy_capture(fd, out, outCap, needed);
+	close(fd);
+
+	if (leave && wasStopped) {
+		sStopped = 0;
+		return 2;
+	}
 	return 0;
 }
 

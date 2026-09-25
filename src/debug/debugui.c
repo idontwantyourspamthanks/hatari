@@ -1435,12 +1435,13 @@ bool DebugUI_ParseFile(const char *path, bool reinit, bool verbose)
 
 /**
  * Remote/parallel debugger line usage API.
- * Return false for failed command, true for success.
+ * Returns a DEBUGGER_* code. An input that does not expand is CMDCONT:
+ * nothing ran, and the caller must not treat that as leaving the debugger.
  */
-bool DebugUI_ParseLine(const char *input)
+int DebugUI_ParseLineCode(const char *input)
 {
 	char *expanded;
-	int ret = 0;
+	int ret = DEBUGGER_CMDCONT;
 
 	DebugUI_Init();
 
@@ -1455,7 +1456,16 @@ bool DebugUI_ParseLine(const char *input)
 		DebugCpu_SetDebugging();
 		DebugDsp_SetDebugging();
 	}
-	return (ret == DEBUGGER_CMDDONE);
+	return ret;
+}
+
+/**
+ * Remote/parallel debugger line usage API.
+ * Return false for failed command, true for success.
+ */
+bool DebugUI_ParseLine(const char *input)
+{
+	return DebugUI_ParseLineCode(input) == DEBUGGER_CMDDONE;
 }
 
 /**

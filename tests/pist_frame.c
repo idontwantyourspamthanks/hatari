@@ -158,6 +158,13 @@ int main(int argc, char **argv)
 			return 1;
 		}
 	}
+	{
+		char out[64];
+		if (pist_hatari_command("info video", out, (int)sizeof(out), NULL) == 0) {
+			fprintf(stderr, "a debugger line was accepted before the machine was up\n");
+			return 1;
+		}
+	}
 
 	{
 		PistHatariSession session;
@@ -352,6 +359,55 @@ int main(int argc, char **argv)
 			return 1;
 		}
 
+		/* info, disassembly and history are the panes. An unknown line
+		 * prints an error and stays stopped. `c` is checked after pause,
+		 * because it leaves the debugger. */
+		{
+			char out[65536];
+			int cmdNeeded = -1;
+			int rc;
+
+			if (pist_hatari_command("", out, (int)sizeof(out), &cmdNeeded) == 0) {
+				fprintf(stderr, "an empty debugger line was accepted\n");
+				pist_hatari_stop();
+				return 1;
+			}
+			cmdNeeded = -1;
+			rc = pist_hatari_command("info video", out, (int)sizeof(out), &cmdNeeded);
+			if (rc != 0 || cmdNeeded < 1 || !strstr(out, "Video")) {
+				fprintf(stderr, "info video returned %d (%d bytes): %s\n",
+				        rc, cmdNeeded, out);
+				pist_hatari_stop();
+				return 1;
+			}
+			cmdNeeded = -1;
+			rc = pist_hatari_command("d", out, (int)sizeof(out), &cmdNeeded);
+			if (rc != 0 || !strstr(out, "bra")) {
+				fprintf(stderr, "disassembly returned %d: %s\n", rc, out);
+				pist_hatari_stop();
+				return 1;
+			}
+			cmdNeeded = -1;
+			rc = pist_hatari_command("history 4", out, (int)sizeof(out), &cmdNeeded);
+			if (rc != 0 || strstr(out, "No history")) {
+				fprintf(stderr, "history returned %d: %s\n", rc, out);
+				pist_hatari_stop();
+				return 1;
+			}
+			cmdNeeded = -1;
+			rc = pist_hatari_command("thisisnotacommand", out, (int)sizeof(out), &cmdNeeded);
+			if (rc != 0 || !strstr(out, "not found")) {
+				fprintf(stderr, "unknown command returned %d: %s\n", rc, out);
+				pist_hatari_stop();
+				return 1;
+			}
+			if (pist_hatari_pc() != pc) {
+				fprintf(stderr, "a query moved the PC to %08x\n", pist_hatari_pc());
+				pist_hatari_stop();
+				return 1;
+			}
+		}
+
 		/* The bra branches to itself, so a step and a step-over both
 		 * stay on it. step-over is not a subroutine here; it is the
 		 * one-instruction path of `n`. */
@@ -510,7 +566,23 @@ int main(int argc, char **argv)
 			pist_hatari_stop();
 			return 1;
 		}
-		printf("keys, step, registers, breakpoint, audio and pause ok, pc %08x\n", pist_hatari_pc());
+		{
+			char out[4096];
+			int cmdNeeded = -1;
+			if (pist_hatari_command("c", out, (int)sizeof(out), &cmdNeeded) != 2) {
+				fprintf(stderr, "cont did not leave the debugger: %s\n", out);
+				pist_hatari_stop();
+				return 1;
+			}
+			stopped = 1;
+			memset(&frame, 0, sizeof(frame));
+			if (pist_hatari_run(&frame, &stopped) != 0 || stopped) {
+				fprintf(stderr, "cont did not resume\n");
+				pist_hatari_stop();
+				return 1;
+			}
+		}
+		printf("keys, step, registers, breakpoint, audio, debugger and pause ok, pc %08x\n", pist_hatari_pc());
 	}
 
 	pist_hatari_stop();
