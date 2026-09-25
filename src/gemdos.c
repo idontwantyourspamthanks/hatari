@@ -1137,6 +1137,28 @@ static int GemDOS_FileName2HardDriveID(char *pszFileName)
  * Check whether a file in given path matches given case-insensitive pattern.
  * Return first matched name which caller needs to free, or NULL for no match.
  */
+/* Directory listing is handed a path that already ends in a separator.
+ * Windows rejects that: with large-file support, GetFileAttributes and
+ * stat fail on a trailing backslash, so opendir never sees the project
+ * folder. Every name then looks missing, including the program, and the
+ * log shows "No GEMDOS dir '<project>\AUTO'". "C:\" must be kept as-is;
+ * "C:" is the process's current directory on that drive. */
+static void host_dir_for_listing(const char *src, char *dst, size_t dstlen)
+{
+	size_t len;
+
+	if (dstlen == 0)
+		return;
+	strncpy(dst, src, dstlen - 1);
+	dst[dstlen - 1] = '\0';
+	len = strlen(dst);
+	while (len > 1 && (dst[len - 1] == '/' || dst[len - 1] == '\\')) {
+		if (len == 3 && dst[1] == ':')
+			break;
+		dst[--len] = '\0';
+	}
+}
+
 static char* match_host_dir_entry(const char *path, const char *name, bool pattern)
 {
 #define MAX_UTF8_NAME_LEN (3*(8+1+3)+1) /* UTF-8 can have up to 3 bytes per character */
@@ -1144,11 +1166,13 @@ static char* match_host_dir_entry(const char *path, const char *name, bool patte
 	char *match = NULL;
 	DIR *dir;
 	char nameHost[MAX_UTF8_NAME_LEN];
+	char dirpath[FILENAME_MAX];
 
 	Str_Filename_Atari2Host(name, nameHost, MAX_UTF8_NAME_LEN, INVALID_CHAR);
 	name = nameHost;
-	
-	dir = opendir(path);
+
+	host_dir_for_listing(path, dirpath, sizeof(dirpath));
+	dir = opendir(dirpath);
 	if (!dir)
 		return NULL;
 
@@ -3098,7 +3122,11 @@ static bool GemDOS_SFirst(uint32_t Params)
 	 * TODO: host path may not fit into InternalDTA
 	 */
 	fsfirst_dirname(szActualFileName, InternalDTAs[useidx].path);
-	fsdir = opendir(InternalDTAs[useidx].path);
+	{
+		char dirpath[FILENAME_MAX];
+		host_dir_for_listing(InternalDTAs[useidx].path, dirpath, sizeof(dirpath));
+		fsdir = opendir(dirpath);
+	}
 
 	if (fsdir == NULL)
 	{
