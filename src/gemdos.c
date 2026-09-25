@@ -2892,6 +2892,7 @@ static int GemDOS_Pexec(uint32_t Params)
 	pszFileName = STMemory_GetStringPointer(prgname);
 	if (!pszFileName)
 		return false;
+	Log_Printf(LOG_INFO, "Pexec(%d) '%s' at PC 0x%X\n", mode, pszFileName, CallingPC);
 	Drive = GemDOS_FileName2HardDriveID(pszFileName);
 
 	/* Skip if it is not using our emulated drive */
@@ -2902,6 +2903,7 @@ static int GemDOS_Pexec(uint32_t Params)
 	fh = fopen(sFileName, "rb");
 	if (!fh)
 	{
+		Log_Printf(LOG_WARN, "Pexec fopen failed: '%s'\n", sFileName);
 		Regs[REG_D0] = GEMDOS_EFILNF;
 		return true;
 	}
@@ -2910,9 +2912,11 @@ static int GemDOS_Pexec(uint32_t Params)
 	if (len != sizeof(prgh) || prgh[0] != 0x60 || prgh[1] != 0x1a
 	    || prgh[2] & 0x80 || prgh[6] & 0x80 || prgh[10] & 0x80)
 	{
+		Log_Printf(LOG_WARN, "Pexec rejected header of '%s'\n", sFileName);
 		Regs[REG_D0] = GEMDOS_EPLFMT;
 		return true;
 	}
+	Log_Printf(LOG_INFO, "Pexec loading '%s'\n", sFileName);
 	Symbols_ChangeCurrentProgram(sFileName);
 
 	/* Prepare stack to run "create basepage": */

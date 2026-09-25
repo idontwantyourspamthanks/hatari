@@ -234,6 +234,7 @@ bool INF_SetAutoStart(const char *name, int opt_id)
 		free(TosOverride.prgname);
 	TosOverride.prgname = prgname;
 	TosOverride.prgname_id = opt_id;
+	Log_Printf(LOG_INFO, "Autostart name: %s\n", prgname);
 	return true;
 }
 
@@ -814,7 +815,7 @@ static FILE* write_inf_file(const char *contents, int size, int res, int res_col
 		return NULL;
 	}
 	if (prgname)
-		Log_Printf(LOG_DEBUG, "Virtual '%s' autostart INF file created for '%s'\n", infname, prgname);
+		Log_Printf(LOG_INFO, "Virtual '%s' autostart INF file created for '%s'\n", infname, prgname);
 	else
 		Log_Printf(LOG_DEBUG, "Virtual '%s' TOS resolution override INF file created\n", infname);
 	return fp;

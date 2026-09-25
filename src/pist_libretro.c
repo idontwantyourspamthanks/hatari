@@ -27,9 +27,11 @@ const char PistLibretro_fileid[] = "Hatari pist_libretro.c";
 #include "screen.h"
 #include "stMemory.h"
 #include "tos.h"
+#include "video.h"
 
 #include <stdlib.h>
 #include <stdio.h>
+#include <stdarg.h>
 #include <string.h>
 #include <unistd.h>
 #ifdef _WIN32
@@ -41,6 +43,25 @@ const char PistLibretro_fileid[] = "Hatari pist_libretro.c";
 static int sUp;
 static int sStarted;
 static int sStopped;
+static int sRunCount;
+static int sSawRam;
+static int sSawText;
+
+/* stderr is the console the Windows package already opens. Lines are
+ * milestones, not a per-frame dump: the first call says the CPU loop was
+ * entered, the matching return says it came back, and later lines mark
+ * leaving ROM, a loaded program, and the debugger callback. */
+static void pist_trace(const char *fmt, ...)
+{
+	va_list ap;
+
+	fprintf(stderr, "pist: ");
+	va_start(ap, fmt);
+	vfprintf(stderr, fmt, ap);
+	va_end(ap);
+	fputc('\n', stderr);
+	fflush(stderr);
+}
 
 /* M68000_Start arms a CPU reset. Hatari calls it once; a later call would
  * reboot on every frame. m68k_go continues the machine that is already up. */
@@ -52,6 +73,7 @@ static size_t sFrameCap;
  * then returns to pist_hatari_run. */
 static bool on_debugger(void)
 {
+	pist_trace("debugger callback pc=$%x", M68000_GetPC());
 	sStopped = 1;
 	bQuitProgram = true;
 	M68000_SetSpecial(SPCFLAG_BRK);
@@ -214,7 +236,14 @@ int pist_hatari_start(const PistHatariSession *session, char *err, int errCap)
 
 	sStopped = 0;
 	sStarted = 0;
+	sRunCount = 0;
+	sSawRam = 0;
+	sSawText = 0;
 	sUp = 1;
+	pist_trace("session tos='%s' gemdos='%s' program='%s'",
+	           session->tosPath ? session->tosPath : "",
+	           session->gemdosDir ? session->gemdosDir : "",
+	           session->programPath ? session->programPath : "");
 	/* The subprocess bootstrap script arms this before the program runs.
 	 * Without it the history pane has nothing to show. */
 	if (pist_hatari_command("history cpu", NULL, 0, NULL) != 0) {
@@ -234,6 +263,9 @@ void pist_hatari_stop(void)
 	sUp = 0;
 	sStarted = 0;
 	sStopped = 0;
+	sRunCount = 0;
+	sSawRam = 0;
+	sSawText = 0;
 	free(sFrame);
 	sFrame = NULL;
 	sFrameCap = 0;
@@ -250,7 +282,12 @@ int pist_hatari_run(PistHatariFrame *frame, int *stopped)
 		return 1;
 
 	/* One frame, or the debugger, whichever comes first. A later call
-	 * while stopped does not resume; that is pist_hatari_resume. */
+	 * while stopped does not resume; that is pist_hatari_resume.
+	 * "enter" with no following "return" means this call never came
+	 * back out of the CPU loop. */
+	const int n = ++sRunCount;
+	if (n == 1)
+		pist_trace("run %d enter pc=$%x vbl=%d", n, M68000_GetPC(), nVBLs);
 	if (!sStopped) {
 		bQuitProgram = false;
 		Main_SetRunVBLs(1);
@@ -261,6 +298,21 @@ int pist_hatari_run(PistHatariFrame *frame, int *stopped)
 			m68k_go(1);
 		}
 		bQuitProgram = false;
+	}
+	{
+		const uint32_t pc = M68000_GetPC();
+		const uint32_t text = DebugInfo_GetTEXT();
+		const int sawRam = pc > 0 && pc < 0xe00000u && !sSawRam;
+		const int sawText = text != 0 && !sSawText;
+		const int milestone = n == 1 || n == 10 || n == 50 || n == 100
+			|| n == 500 || (n % 1000) == 0;
+		if (sawRam)
+			sSawRam = 1;
+		if (sawText)
+			sSawText = 1;
+		if (milestone || sStopped || sawRam || sawText)
+			pist_trace("run %d return pc=$%x vbl=%d stopped=%d text=$%x",
+			           n, pc, nVBLs, sStopped, text);
 	}
 
 	if (frame)
