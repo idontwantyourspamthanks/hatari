@@ -14,6 +14,12 @@
 #include <stddef.h>
 #include <stdint.h>
 
+/* Real SDL_platform.h defines this, and remotedebug.c uses it to choose
+ * freopen over assigning stderr. MinGW's stderr is not an lvalue. */
+#if (defined(_WIN32) || defined(__CYGWIN__)) && !defined(__WINDOWS__)
+#define __WINDOWS__ 1
+#endif
+
 #ifdef __cplusplus
 extern "C" {
 #endif
