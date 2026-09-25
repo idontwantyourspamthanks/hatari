@@ -46,7 +46,7 @@ static const char *find_rom(int argc, char **argv)
 	return NULL;
 }
 
-static int start_session(const char *tos, const char *program)
+static int start_session(const char *tos, const char *program, const char *monitor)
 {
 	PistHatariSession session;
 	char err[512];
@@ -56,6 +56,7 @@ static int start_session(const char *tos, const char *program)
 	session.tosPath = tos;
 	session.machine = "st";
 	session.memSizeMiB = 1;
+	session.monitor = monitor;
 	session.programPath = program;
 	err[0] = '\0';
 	if (pist_hatari_start(&session, err, (int)sizeof(err)) != 0) {
@@ -76,6 +77,26 @@ static int frame_has_ink(const PistHatariFrame *frame)
 	n = frame->width * frame->height;
 	for (i = 0; i < n; i++) {
 		if ((pixels[i] & 0x00FFFFFFu) != 0)
+			return 1;
+	}
+	return 0;
+}
+
+static int frame_has_colour(const PistHatariFrame *frame)
+{
+	const uint32_t *pixels;
+	int n, i;
+
+	if (!frame->pixels || frame->width <= 0 || frame->height <= 0)
+		return 0;
+	pixels = (const uint32_t *)frame->pixels;
+	n = frame->width * frame->height;
+	for (i = 0; i < n; i++) {
+		const uint32_t p = pixels[i] & 0x00FFFFFFu;
+		const uint32_t r = (p >> 16) & 0xffu;
+		const uint32_t g = (p >> 8) & 0xffu;
+		const uint32_t b = p & 0xffu;
+		if (r != g || g != b)
 			return 1;
 	}
 	return 0;
@@ -138,7 +159,25 @@ int main(int argc, char **argv)
 		}
 	}
 
-	if (start_session(rom, NULL) != 0)
+	{
+		PistHatariSession session;
+		char err[512];
+
+		memset(&session, 0, sizeof(session));
+		session.abi = PIST_HATARI_ABI;
+		session.tosPath = rom;
+		session.machine = "st";
+		session.memSizeMiB = 1;
+		session.monitor = "nope";
+		err[0] = '\0';
+		if (pist_hatari_start(&session, err, (int)sizeof(err)) == 0) {
+			fprintf(stderr, "an unknown monitor was accepted\n");
+			pist_hatari_stop();
+			return 1;
+		}
+	}
+
+	if (start_session(rom, NULL, NULL) != 0)
 		return 1;
 	for (i = 0; i < 300 && !ink; i++) {
 		memset(&frame, 0, sizeof(frame));
@@ -166,10 +205,41 @@ int main(int argc, char **argv)
 		}
 		printf("audio frames %d\n", n);
 	}
-	pist_hatari_stop();
 	if (!ink) {
 		fprintf(stderr, "300 frames stayed black\n");
+		pist_hatari_stop();
 		return 1;
+	}
+	{
+		const int mono_w = frame.width;
+		const int mono_h = frame.height;
+		int colour = 0;
+
+		pist_hatari_stop();
+		if (start_session(rom, NULL, "rgb") != 0)
+			return 1;
+		for (i = 0; i < 300 && !colour; i++) {
+			memset(&frame, 0, sizeof(frame));
+			stopped = 0;
+			if (pist_hatari_run(&frame, &stopped) != 0) {
+				fprintf(stderr, "rgb run failed on frame %d\n", i);
+				pist_hatari_stop();
+				return 1;
+			}
+			colour = frame_has_colour(&frame);
+		}
+		printf("rgb frame %dx%d after %d vb, colour %d\n",
+		       frame.width, frame.height, i, colour);
+		pist_hatari_stop();
+		if (!colour) {
+			fprintf(stderr, "rgb monitor produced no colour pixel\n");
+			return 1;
+		}
+		if (frame.width == mono_w && frame.height == mono_h) {
+			fprintf(stderr, "rgb frame is the same size as mono (%dx%d)\n",
+			        mono_w, mono_h);
+			return 1;
+		}
 	}
 
 	if (!mkdtemp(dir)) {
@@ -181,7 +251,7 @@ int main(int argc, char **argv)
 		fprintf(stderr, "could not write %s\n", prg);
 		return 1;
 	}
-	if (start_session(rom, prg) != 0)
+	if (start_session(rom, prg, NULL) != 0)
 		return 1;
 	stopped = 0;
 	for (i = 0; i < 4000 && !stopped; i++) {

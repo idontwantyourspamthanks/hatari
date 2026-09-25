@@ -91,6 +91,16 @@ static void copy_frame(PistHatariFrame *frame)
 	frame->pitch = pitch;
 }
 
+static const char *monitor_arg(const char *monitor)
+{
+	if (!monitor || !monitor[0])
+		return "mono";
+	if (strcmp(monitor, "mono") == 0 || strcmp(monitor, "rgb") == 0
+	    || strcmp(monitor, "vga") == 0 || strcmp(monitor, "tv") == 0)
+		return monitor;
+	return NULL;
+}
+
 static void set_error(char *err, int errCap, const char *text)
 {
 	if (err && errCap > 0)
@@ -113,6 +123,7 @@ int pist_hatari_tos_version(void)
 int pist_hatari_start(const PistHatariSession *session, char *err, int errCap)
 {
 	const char *argv[24];
+	const char *monitor;
 	char mem[16];
 	int argc = 0;
 
@@ -128,6 +139,12 @@ int pist_hatari_start(const PistHatariSession *session, char *err, int errCap)
 		          "No TOS ROM was given. The core does not contain one.");
 		return 1;
 	}
+	monitor = monitor_arg(session->monitor);
+	if (!monitor) {
+		set_error(err, errCap,
+		          "Unknown monitor. Expected mono, rgb, vga or tv.");
+		return 1;
+	}
 
 	argv[argc++] = "hatari_libretro";
 	argv[argc++] = "--tos";
@@ -140,7 +157,7 @@ int pist_hatari_start(const PistHatariSession *session, char *err, int errCap)
 		argv[argc++] = mem;
 	}
 	argv[argc++] = "--monitor";
-	argv[argc++] = "mono";
+	argv[argc++] = monitor;
 	argv[argc++] = "--alert-level";
 	argv[argc++] = "fatal";
 	argv[argc++] = "--confirm-quit";
