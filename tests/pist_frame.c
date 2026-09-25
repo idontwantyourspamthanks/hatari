@@ -322,6 +322,53 @@ int main(int argc, char **argv)
 				return 1;
 			}
 		}
+		/* Host motion is delivered by the IKBD autosend interrupt.
+		 * Ending a frame sets the quit flag, and that interrupt used
+		 * to treat the flag as a real quit and never arm itself again.
+		 * A key press makes the two coincide. The pointer must still
+		 * move on the frames after the key. */
+		{
+			int sweep;
+			int streak = 0;
+			int worst = 0;
+			int consumed_after_key = 0;
+			for (sweep = 0; sweep < 40; sweep++) {
+				if (pist_hatari_mouse(2, 0, 0) != 0) {
+					fprintf(stderr, "mouse rejected while running\n");
+					pist_hatari_stop();
+					return 1;
+				}
+				if (sweep == 10) {
+					pist_hatari_key(SDLK_a, 0, 1);
+					pist_hatari_key(SDLK_a, 0, 0);
+				}
+				stopped = 0;
+				memset(&frame, 0, sizeof(frame));
+				if (pist_hatari_run(&frame, &stopped) != 0 || stopped) {
+					fprintf(stderr, "run stopped during the mouse sweep\n");
+					pist_hatari_stop();
+					return 1;
+				}
+				/* The autosend is about one frame. A single frame can
+				 * end before it runs; a dead interrupt leaves every
+				 * later frame unconsumed. */
+				if (KeyboardProcessor.Mouse.dx != 0) {
+					if (++streak > worst)
+						worst = streak;
+				} else {
+					streak = 0;
+					if (sweep > 10)
+						consumed_after_key++;
+				}
+			}
+			if (worst > 3 || consumed_after_key == 0) {
+				fprintf(stderr, "mouse stopped after the key (streak %d, consumed after %d)\n",
+				        worst, consumed_after_key);
+				pist_hatari_stop();
+				return 1;
+			}
+		}
+
 		if (pist_hatari_pause() != 0) {
 			fprintf(stderr, "pause failed\n");
 			pist_hatari_stop();

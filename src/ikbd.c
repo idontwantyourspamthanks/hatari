@@ -1796,6 +1796,13 @@ void IKBD_InterruptHandler_AutoSend(void)
 	{
 		/* Assure that CPU core shuts down */
 		M68000_SetSpecial(SPCFLAG_BRK);
+		/* A libretro frame ends by setting this flag too. The autosend
+		 * interrupt is what turns host motion into ST mouse packets.
+		 * Dropping it here leaves the pointer dead for the rest of the
+		 * session, while keys still arrive because they are buffered
+		 * directly. Arm it again; the next frame will run it. */
+		if (Main_LibretroSession())
+			CycInt_AddRelativeInterrupt(Keyboard.AutoSendCycles, INT_CPU8_CYCLE, INTERRUPT_IKBD_AUTOSEND);
 		return;
 	}
 
