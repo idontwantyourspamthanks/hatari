@@ -147,8 +147,8 @@ const char* GetString(BLT_OP val)
 }
 const char* GetString(IS_STEREO val)
 {
-	if (val==IS_STEREO::MONO) return "Mono";
 	if (val==IS_STEREO::STEREO) return "Stereo";
+	if (val==IS_STEREO::MONO) return "Mono";
 	return "?";
 }
 const char* GetString(DMA_FREQ val)
@@ -302,8 +302,8 @@ const char* GetEnumString(BLT_OP val)
 }
 const char* GetEnumString(IS_STEREO val)
 {
-	if (val==IS_STEREO::MONO) return "MONO";
 	if (val==IS_STEREO::STEREO) return "STEREO";
+	if (val==IS_STEREO::MONO) return "MONO";
 	return "?";
 }
 const char* GetEnumString(DMA_FREQ val)
@@ -444,8 +444,8 @@ const stgen::StringDef g_enumDescs_BLT_OP[] = {
 	{ 0, nullptr }
 };
 const stgen::StringDef g_enumDescs_IS_STEREO[] = {
-	{ 0, "Mono" },
-	{ 1, "Stereo" },
+	{ 0, "Stereo" },
+	{ 1, "Mono" },
 	{ 0, nullptr }
 };
 const stgen::StringDef g_enumDescs_DMA_FREQ[] = {

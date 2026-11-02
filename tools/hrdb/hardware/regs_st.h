@@ -153,8 +153,8 @@ enum class BLT_OP : uint32_t {
 
 /* Enum IS_STEREO */
 enum class IS_STEREO : uint32_t {
-	MONO                 =      0, /* Mono */
-	STEREO               =      1  /* Stereo */
+	STEREO               =      0, /* Stereo */
+	MONO                 =      1  /* Mono */
 };
 
 /* Enum DMA_FREQ */
